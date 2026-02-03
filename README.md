@@ -106,7 +106,14 @@ curl http://localhost:38181/api/check/health
 
 ## End-to-End Example: Catalog, Negotiate, Transfer
 
+This walkthrough assumes you are running with **Docker Compose** (`docker compose up`). All `curl` commands are run from your host terminal. If you are running natively instead, replace the `counterPartyAddress` service names with `localhost` (see [Docker vs Native: counterPartyAddress](#docker-vs-native-counterpartyaddress)).
+
+> **Provider** = the connector that owns the data (management API on port **19193**)
+> **Consumer** = the connector requesting access (management API on port **29193**)
+
 ### 1. Create an Asset on the Provider
+
+Register a data source on the provider. This example exposes a public JSON API as an asset:
 
 ```bash
 curl -X POST http://localhost:19193/management/v3/assets \
@@ -129,7 +136,7 @@ curl -X POST http://localhost:19193/management/v3/assets \
 
 ### 2. Create a Policy Definition
 
-An open (permit-all) policy for the demo:
+Create an open (permit-all) policy on the provider. In production you would add constraints here:
 
 ```bash
 curl -X POST http://localhost:19193/management/v3/policydefinitions \
@@ -153,7 +160,7 @@ curl -X POST http://localhost:19193/management/v3/policydefinitions \
 
 ### 3. Create a Contract Definition
 
-Links the asset to the policy, making it visible in the catalog:
+Link the asset to the policy on the provider. This makes the asset visible in the provider's catalog:
 
 ```bash
 curl -X POST http://localhost:19193/management/v3/contractdefinitions \
@@ -170,22 +177,28 @@ curl -X POST http://localhost:19193/management/v3/contractdefinitions \
 
 ### 4. Request the Catalog (from Consumer)
 
+Ask the consumer to fetch the provider's catalog. The `counterPartyAddress` tells the consumer runtime where to find the provider's DSP protocol endpoint — this uses the Docker service name because the containers communicate over the Docker network:
+
 ```bash
 curl -X POST http://localhost:29193/management/v3/catalog/request \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: password" \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
-    "counterPartyAddress": "http://localhost:19194/protocol",
+    "counterPartyAddress": "http://provider-controlplane:19194/protocol",
     "protocol": "dataspace-protocol-http"
   }'
 ```
 
-The response will contain a `dcat:dataset` with an `odrl:hasPolicy` field. Copy the `@id` of the policy (the offer ID) for the next step.
+In the response, find the `dcat:dataset` entry for `sample-asset-1`. Inside it, `odrl:hasPolicy` contains the offer. Copy the `@id` of that policy — this is the **offer ID** you need for the next step. It looks like a Base64-encoded string, e.g.:
+
+```
+c2FtcGxlLWNvbnRyYWN0LWRlZg==:c2FtcGxlLWFzc2V0LTE=:MjdlNDFh...
+```
 
 ### 5. Negotiate a Contract
 
-Replace `<OFFER_ID>` with the offer ID from the catalog response:
+Start a contract negotiation on the consumer side. Replace `<OFFER_ID>` with the offer ID from step 4:
 
 ```bash
 curl -X POST http://localhost:29193/management/v3/contractnegotiations \
@@ -193,7 +206,7 @@ curl -X POST http://localhost:29193/management/v3/contractnegotiations \
   -H "X-Api-Key: password" \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
-    "counterPartyAddress": "http://localhost:19194/protocol",
+    "counterPartyAddress": "http://provider-controlplane:19194/protocol",
     "protocol": "dataspace-protocol-http",
     "policy": {
       "@context": "http://www.w3.org/ns/odrl.jsonld",
@@ -208,18 +221,18 @@ curl -X POST http://localhost:29193/management/v3/contractnegotiations \
   }'
 ```
 
-Check negotiation status (replace `<NEGOTIATION_ID>` with the returned `@id`):
+The response returns a negotiation `@id`. Poll the negotiation status until `state` becomes `FINALIZED` (replace `<NEGOTIATION_ID>` with the returned `@id`):
 
 ```bash
 curl http://localhost:29193/management/v3/contractnegotiations/<NEGOTIATION_ID> \
   -H "X-Api-Key: password"
 ```
 
-Wait until `state` is `FINALIZED`, then note the `contractAgreementId`.
+Once finalized, copy the `contractAgreementId` from the response — you need it for the transfer.
 
 ### 6. Initiate a Data Transfer
 
-Replace `<AGREEMENT_ID>` with the contract agreement ID:
+Request a data transfer on the consumer side. Replace `<AGREEMENT_ID>` with the contract agreement ID from step 5:
 
 ```bash
 curl -X POST http://localhost:29193/management/v3/transferprocesses \
@@ -227,7 +240,7 @@ curl -X POST http://localhost:29193/management/v3/transferprocesses \
   -H "X-Api-Key: password" \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
-    "counterPartyAddress": "http://localhost:19194/protocol",
+    "counterPartyAddress": "http://provider-controlplane:19194/protocol",
     "protocol": "dataspace-protocol-http",
     "contractId": "<AGREEMENT_ID>",
     "assetId": "sample-asset-1",
@@ -235,30 +248,30 @@ curl -X POST http://localhost:29193/management/v3/transferprocesses \
   }'
 ```
 
-Check transfer status (replace `<TRANSFER_ID>`):
+Poll the transfer status until `state` becomes `STARTED` (replace `<TRANSFER_ID>` with the returned `@id`):
 
 ```bash
 curl http://localhost:29193/management/v3/transferprocesses/<TRANSFER_ID> \
   -H "X-Api-Key: password"
 ```
 
-Wait until `state` is `STARTED`.
-
 ### 7. Fetch Data via EDR
 
-Get the Endpoint Data Reference (EDR) containing the access token:
+Once the transfer is `STARTED`, retrieve the Endpoint Data Reference (EDR). This contains a short-lived access token for the data plane:
 
 ```bash
 curl http://localhost:29193/management/v3/edrs/<TRANSFER_ID>/dataaddress \
   -H "X-Api-Key: password"
 ```
 
-The response contains `endpoint` and `authorization` fields. Use the token to fetch data through the data plane:
+The response contains an `endpoint` URL and an `authorization` token. The `endpoint` will show the Docker service name (`http://provider-dataplane:38185/public`), but from your host terminal use `localhost` instead:
 
 ```bash
 curl http://localhost:38185/public \
   -H "Authorization: Bearer <TOKEN>"
 ```
+
+This returns the data from the asset's backing data source (in this example, the JSON from `jsonplaceholder.typicode.com/todos/1`).
 
 ## Custom Extensions
 
