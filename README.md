@@ -58,6 +58,39 @@ java -Dedc.fs.config=config/dataplane.properties \
      -jar runtimes/dataplane/build/libs/dataplane.jar
 ```
 
+## Run with Docker Compose
+
+Prerequisites:
+- Docker and Docker Compose
+- Token signing keys generated (see [Generate Token Signing Keys](#generate-token-signing-keys))
+
+Build the Docker images and start all services:
+
+```bash
+./gradlew dockerize
+docker compose up
+```
+
+All three runtimes will start and register as healthy. Ports are mapped 1:1 to the host, so health checks and management API calls use the same `localhost` URLs as native mode.
+
+To stop the services:
+
+```bash
+docker compose down
+```
+
+### Docker vs Native: `counterPartyAddress`
+
+When running with Docker Compose, the containers communicate over a Docker network using service names. The `counterPartyAddress` field in API request bodies (catalog requests, negotiations, transfers) must use Docker service names instead of `localhost`:
+
+| Native | Docker Compose |
+|--------|---------------|
+| `http://localhost:19194/protocol` | `http://provider-controlplane:19194/protocol` |
+
+The management API URLs you `curl` from your terminal remain `localhost` in both modes. Only the `counterPartyAddress` (which tells one EDC runtime how to reach another) changes.
+
+Similarly, the EDR `endpoint` returned by the consumer will contain the Docker service name (`http://provider-dataplane:38185/public`). When fetching data from the host, use `http://localhost:38185/public` instead.
+
 ## Verify Health
 
 ```bash
