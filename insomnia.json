@@ -16,7 +16,7 @@
       "_id": "env_base",
       "parentId": "wrk_pilots_dataspace",
       "_type": "environment",
-      "name": "Docker Compose (default)",
+      "name": "Base Environment",
       "data": {
         "provider_mgmt": "http://localhost:19193",
         "consumer_mgmt": "http://localhost:29193",
@@ -35,24 +35,22 @@
       "isPrivate": false
     },
     {
+      "_id": "env_docker_compose",
+      "parentId": "env_base",
+      "_type": "environment",
+      "name": "Docker Compose",
+      "data": {
+        "counterPartyAddress": "http://provider-controlplane:19194/protocol"
+      },
+      "isPrivate": false
+    },
+    {
       "_id": "env_native",
-      "parentId": "wrk_pilots_dataspace",
+      "parentId": "env_base",
       "_type": "environment",
       "name": "Native (localhost)",
       "data": {
-        "provider_mgmt": "http://localhost:19193",
-        "consumer_mgmt": "http://localhost:29193",
-        "provider_health": "http://localhost:18181",
-        "consumer_health": "http://localhost:28181",
-        "dataplane_health": "http://localhost:38181",
-        "dataplane_public": "http://localhost:38185",
-        "api_key": "password",
-        "counterPartyAddress": "http://localhost:19194/protocol",
-        "offer_id": "<REPLACE_WITH_OFFER_ID>",
-        "negotiation_id": "<REPLACE_WITH_NEGOTIATION_ID>",
-        "agreement_id": "<REPLACE_WITH_AGREEMENT_ID>",
-        "transfer_id": "<REPLACE_WITH_TRANSFER_ID>",
-        "edr_token": "<REPLACE_WITH_EDR_TOKEN>"
+        "counterPartyAddress": "http://localhost:19194/protocol"
       },
       "isPrivate": false
     },
