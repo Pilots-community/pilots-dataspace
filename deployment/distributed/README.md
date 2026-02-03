@@ -1,6 +1,6 @@
 # Distributed Multi-Machine Deployment
 
-Run EDC connectors on separate machines communicating over a network tunnel (Tailscale, ngrok, or any routable IP).
+Run EDC connectors on separate machines so they communicate over the network instead of a shared Docker network.
 
 ## Architecture
 
@@ -12,7 +12,7 @@ Machine A                                Machine B
 | docker-compose.yml            |        | docker-compose.yml            |
 |                               |        |                               |
 | provider-controlplane  18181  | <----> | provider-controlplane  18181  |
-|   mgmt:19193 DSP:19194       | tunnel  |   mgmt:19193 DSP:19194       |
+|   mgmt:19193 DSP:19194       |        |   mgmt:19193 DSP:19194       |
 |                               |        |                               |
 | consumer-controlplane  28181  | <----> | consumer-controlplane  28181  |
 |   mgmt:29193 DSP:29194       |        |   mgmt:29193 DSP:29194       |
@@ -24,39 +24,114 @@ Machine A                                Machine B
 
 Both machines run identical services on identical ports. No port conflicts since they're on different hosts. The `-D` JVM flags in the compose file override cross-network properties with `MY_PUBLIC_URL` so the remote machine can reach back.
 
+## How `MY_PUBLIC_URL` Works
+
+EDC connectors exchange callback URLs during negotiation and transfer. In the single-machine `docker-compose.yml`, these URLs use Docker service names (e.g. `http://provider-controlplane:19194`). That only works when both connectors share the same Docker network.
+
+In a distributed setup, the remote machine can't resolve Docker service names. `MY_PUBLIC_URL` is the address that **the other machine** will use to reach **this machine**. It gets injected into the `-D` JVM flags that override callback and public endpoint URLs.
+
+**You must set `MY_PUBLIC_URL` to an address that the remote machine's Docker containers can connect to.** `http://localhost` will NOT work — inside a container, `localhost` refers to the container itself.
+
 ## Prerequisites
 
 - Docker and Docker Compose
 - Docker images built (`./gradlew dockerize` in the project root)
 - Token signing keys generated (see root [README.md](../../README.md#generate-token-signing-keys))
-- A network tunnel or routable IP between the two machines
+- Both machines must be able to reach each other on ports 19194, 29194, and 38185 (see [Ports That Must Be Reachable](#ports-that-must-be-reachable))
 
-## Setting Up a Tunnel
+## Choosing `MY_PUBLIC_URL` for Your Network Setup
 
-### Tailscale (recommended)
+### Same LAN / Same Network
 
-[Tailscale](https://tailscale.com/) creates a private WireGuard mesh network. Each machine gets a stable IP (e.g. `100.64.x.x`).
+If both machines are on the same local network (e.g. office WiFi, home network), use each machine's LAN IP address.
 
-1. Install Tailscale on both machines
+Find your LAN IP:
+
+```bash
+# Linux
+hostname -I | awk '{print $1}'
+
+# macOS
+ipconfig getifaddr en0
+```
+
+Example: if Machine A's LAN IP is `192.168.1.50`, set `MY_PUBLIC_URL=http://192.168.1.50` in Machine A's `.env`.
+
+Verify connectivity from Machine B:
+
+```bash
+curl http://192.168.1.50:19194  # should get a response (even an error is fine — it means the port is reachable)
+```
+
+### Different Networks (not directly routable)
+
+If the machines are on different networks (e.g. different offices, home vs cloud, behind NAT), they can't reach each other by LAN IP. You need a tunnel or public IP.
+
+#### Tailscale (recommended)
+
+[Tailscale](https://tailscale.com/) creates a private WireGuard mesh network. Each machine gets a stable IP (e.g. `100.64.x.x`) that works across any network — home, office, cloud, mobile.
+
+1. Install Tailscale on both machines: https://tailscale.com/download
 2. Run `tailscale up` on each
-3. Note each machine's Tailscale IP: `tailscale ip -4`
-4. Use `http://<tailscale-ip>` as `MY_PUBLIC_URL`
-
-All ports are reachable between machines with no extra configuration.
-
-### ngrok
-
-[ngrok](https://ngrok.com/) exposes local ports via public URLs. Since each tunnel gets a different hostname, this requires editing the `-D` flags in the compose file directly.
-
-1. Start a tunnel for each port that must be reachable from the remote machine:
+3. Get each machine's Tailscale IP:
    ```bash
-   ngrok http 19194  # provider DSP
-   ngrok http 29194  # consumer DSP
-   ngrok http 38185  # data plane public
+   tailscale ip -4
    ```
-2. Each tunnel gets a unique URL (e.g. `https://abc123.ngrok.io`). You'll need to replace the `${MY_PUBLIC_URL}:<port>` values in the compose file's `-D` flags with the corresponding ngrok URLs (without port numbers, since ngrok handles routing).
+4. Set `MY_PUBLIC_URL=http://<tailscale-ip>` in each machine's `.env`
+
+All ports are automatically reachable between machines with no firewall configuration needed.
+
+Example: if Machine A's Tailscale IP is `100.100.50.1`:
+```
+# Machine A's .env
+MY_PUBLIC_URL=http://100.100.50.1
+```
+
+#### WireGuard / VPN
+
+Any VPN that assigns routable IPs works the same way as Tailscale. Use the VPN-assigned IP as `MY_PUBLIC_URL`.
+
+#### Cloud VM with Public IP
+
+If one or both machines are cloud VMs with public IPs, use the public IP directly. Make sure ports 19194, 29194, and 38185 are open in the cloud security group / firewall.
+
+```
+MY_PUBLIC_URL=http://203.0.113.42
+```
+
+#### ngrok (last resort)
+
+[ngrok](https://ngrok.com/) exposes local ports via public HTTPS URLs. Since each tunnel gets a **different hostname and port**, it doesn't work with the single `MY_PUBLIC_URL` variable. You need to edit the compose file directly.
+
+1. Start a tunnel for each port:
+   ```bash
+   ngrok http 19194  # provider DSP        -> e.g. https://abc123.ngrok.io
+   ngrok http 29194  # consumer DSP        -> e.g. https://def456.ngrok.io
+   ngrok http 38185  # data plane public   -> e.g. https://ghi789.ngrok.io
+   ```
+2. Edit `docker-compose.yml` and replace each `${MY_PUBLIC_URL}:<port>` with the corresponding ngrok URL (no port number — ngrok routes by hostname):
+   - `-Dedc.dsp.callback.address=https://abc123.ngrok.io/protocol` (provider CP)
+   - `-Dedc.dsp.callback.address=https://def456.ngrok.io/protocol` (consumer CP)
+   - `-Dedc.receiver.http.endpoint=https://def456.ngrok.io/protocol` (consumer CP)
+   - `-Dedc.dataplane.api.public.baseurl=https://ghi789.ngrok.io/public` (data plane)
 
 ngrok works for quick tests but Tailscale is simpler for ongoing use.
+
+### Single-Machine Testing
+
+To test the distributed compose file on one machine (e.g. to verify the `-D` overrides work), use the Docker bridge gateway IP. This is the IP the host is reachable at from inside Docker containers.
+
+```bash
+# Find the Docker bridge gateway IP (usually 172.17.0.1)
+ip route | grep docker0 | awk '{print $NF}'
+```
+
+```
+# .env
+MY_PUBLIC_URL=http://172.17.0.1
+```
+
+On macOS/Windows with Docker Desktop, use `http://host.docker.internal` instead.
 
 ## Quick Start
 
@@ -64,22 +139,26 @@ ngrok works for quick tests but Tailscale is simpler for ongoing use.
    ```bash
    cd deployment/distributed
    cp .env.example .env
-   # Edit .env — set MY_PUBLIC_URL to this machine's tunnel/public address
    ```
 
-2. Start the services:
+2. Edit `.env` and set `MY_PUBLIC_URL` to this machine's reachable address (see [Choosing MY_PUBLIC_URL](#choosing-my_public_url-for-your-network-setup) above):
+   ```properties
+   MY_PUBLIC_URL=http://192.168.1.50   # LAN IP, Tailscale IP, public IP, etc.
+   ```
+
+3. Start the services:
    ```bash
    docker compose up
    ```
 
-3. Verify health:
+4. Verify health:
    ```bash
    curl http://localhost:18181/api/check/health  # provider CP
    curl http://localhost:28181/api/check/health  # consumer CP
    curl http://localhost:38181/api/check/health  # data plane
    ```
 
-4. Repeat on the second machine with its own `MY_PUBLIC_URL`.
+5. Repeat on the second machine with its own `MY_PUBLIC_URL`.
 
 ## Distributing Docker Images
 
