@@ -1,0 +1,71 @@
+services:
+
+  provider-controlplane:
+    image: controlplane:latest
+    container_name: provider-controlplane
+    command: >
+      sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
+      exec java -Djava.security.egd=file:/dev/urandom
+      -Dedc.fs.config=/app/config/controlplane-provider.properties
+      -Dedc.dsp.callback.address=${MY_PUBLIC_URL}:19194/protocol
+      -jar edc-controlplane.jar"
+    ports:
+      - "18181:18181"
+      - "19192:19192"
+      - "19193:19193"
+      - "19194:19194"
+    volumes:
+      - ../../config/docker/controlplane-provider.properties:/app/config/controlplane-provider.properties:ro
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:18181/api/check/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  consumer-controlplane:
+    image: controlplane:latest
+    container_name: consumer-controlplane
+    command: >
+      sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
+      exec java -Djava.security.egd=file:/dev/urandom
+      -Dedc.fs.config=/app/config/controlplane-consumer.properties
+      -Dedc.dsp.callback.address=${MY_PUBLIC_URL}:29194/protocol
+      -Dedc.receiver.http.endpoint=${MY_PUBLIC_URL}:29194/protocol
+      -jar edc-controlplane.jar"
+    ports:
+      - "28181:28181"
+      - "29192:29192"
+      - "29193:29193"
+      - "29194:29194"
+    volumes:
+      - ../../config/docker/controlplane-consumer.properties:/app/config/controlplane-consumer.properties:ro
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:28181/api/check/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  provider-dataplane:
+    image: dataplane:latest
+    container_name: provider-dataplane
+    command: >
+      sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
+      exec java -Djava.security.egd=file:/dev/urandom
+      -Dedc.fs.config=/app/config/dataplane.properties
+      -Dedc.dataplane.api.public.baseurl=${MY_PUBLIC_URL}:38185/public
+      -jar edc-dataplane.jar"
+    ports:
+      - "38181:38181"
+      - "38182:38182"
+      - "38185:38185"
+    volumes:
+      - ../../config/docker/dataplane.properties:/app/config/dataplane.properties:ro
+      - ../../config/certs:/app/certs:ro
+    depends_on:
+      provider-controlplane:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:38181/api/check/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

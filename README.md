@@ -80,6 +80,10 @@ docker compose down
 ```
 
 
+## Distributed Deployment (Multi-Machine)
+
+To run connectors on separate machines communicating over a network tunnel, see [`deployment/distributed/README.md`](deployment/distributed/README.md).
+
 ## Verify Health
 
 ```bash

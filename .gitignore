@@ -51,6 +51,7 @@ launchers/demo-e2e/edc-config.properties
 *.hprof
 
 .env
+deployment/distributed/.env
 runtime_settings.properties
 generated_backend.tf
 
