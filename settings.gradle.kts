@@ -39,5 +39,9 @@ dependencyResolutionManagement {
 // add dependencies
 include(":extensions:example-extension")
 include(":extensions:dataplane-public-endpoint")
+include(":extensions:superuser-seed")
+include(":extensions:did-example-resolver")
+include(":extensions:dcp-patch")
 include(":runtimes:controlplane")
 include(":runtimes:dataplane")
+include(":runtimes:identityhub")

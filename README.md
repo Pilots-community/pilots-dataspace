@@ -1,12 +1,13 @@
 # Pilots Dataspace
 
-A downstream project based on [Eclipse Dataspace Components (EDC)](https://github.com/eclipse-edc/Connector) that provides two runtimes (Control Plane and Data Plane) for building custom dataspace solutions.
+A downstream project based on [Eclipse Dataspace Components (EDC)](https://github.com/eclipse-edc/Connector) that provides Control Plane, Data Plane, and IdentityHub runtimes for building custom dataspace solutions with DCP-based identity.
 
 ## Prerequisites
 
 - Java 17+
 - Gradle (wrapper included)
-- Docker + Docker Compose
+- Docker and Docker Compose (for containerized deployment)
+- `jq` and `curl` (for running the seed script)
 
 ## Build
 
@@ -17,14 +18,27 @@ A downstream project based on [Eclipse Dataspace Components (EDC)](https://githu
 This produces:
 - `runtimes/controlplane/build/libs/controlplane.jar` (shadow JAR)
 - `runtimes/dataplane/build/libs/dataplane.jar` (shadow JAR)
+- `runtimes/identityhub/build/libs/identityhub.jar` (shadow JAR)
 
 ## Architecture
+
+### Identity
+
+This project uses the **Decentralized Claims Protocol (DCP)** for identity, replacing the `iam-mock` module. Each participant has:
+- An **IdentityHub** instance with an embedded STS (Secure Token Service) that publishes a `did:web` DID document and handles credential presentation
+- A **Control Plane** configured to authenticate via the STS and resolve DIDs over HTTP
+- A **dataspace issuer** DID hosted as a static file via NGINX, used to sign MembershipCredentials
+
+### Port Allocation
 
 | Component | Config File | Ports |
 |-----------|------------|-------|
 | Provider Control Plane | `config/controlplane.properties` | default: 18181, mgmt: 19193, DSP: 19194, control: 19192 |
 | Consumer Control Plane | `config/controlplane-consumer.properties` | default: 28181, mgmt: 29193, DSP: 29194, control: 29192 |
 | Provider Data Plane | `config/dataplane.properties` | default: 38181, control: 38182, public: 38185 |
+| Provider IdentityHub | `config/identityhub-provider.properties` | base: 7090, creds: 7091, identity: 7092, DID: 7093, version: 7095, STS: 7096 |
+| Consumer IdentityHub | `config/identityhub-consumer.properties` | base: 7080, creds: 7081, identity: 7082, DID: 7083, version: 7085, STS: 7086 |
+| DID Server (NGINX) | — | 9876 |
 
 ## Generate Token Signing Keys
 
@@ -69,10 +83,21 @@ Build the Docker images and start all services:
 
 ```bash
 ./gradlew dockerize
-docker compose up
+docker compose up -d
 ```
 
-All three runtimes will start and register as healthy. Ports are mapped 1:1 to the host, so health checks and management API calls use the same `localhost` URLs as native mode.
+Wait for all services to become healthy, then seed the identity data:
+
+```bash
+# Wait for health checks to pass
+docker compose ps  # all services should show "healthy"
+
+# Seed participant contexts and credentials into IdentityHubs,
+# and store STS client secrets in connector vaults
+./deployment/seed.sh
+```
+
+All runtimes will start and register as healthy. Ports are mapped 1:1 to the host, so health checks and management API calls use the same `localhost` URLs as native mode.
 
 To stop the services:
 
@@ -280,7 +305,7 @@ curl -X POST http://localhost:29193/management/v3/contractnegotiations \
       "@context": "http://www.w3.org/ns/odrl.jsonld",
       "@id": "<OFFER_ID>",
       "@type": "Offer",
-      "assigner": "provider",
+      "assigner": "did:web:provider-identityhub%3A7083",
       "target": "sample-asset-1",
       "permission": [],
       "prohibition": [],
@@ -303,7 +328,7 @@ curl -X POST http://localhost:29193/management/v3/contractnegotiations \
       "@context": "http://www.w3.org/ns/odrl.jsonld",
       "@id": "<OFFER_ID>",
       "@type": "Offer",
-      "assigner": "provider",
+      "assigner": "did:web:provider-identityhub%3A7083",
       "target": "sample-asset-1",
       "permission": [],
       "prohibition": [],
@@ -395,6 +420,18 @@ Provides three capabilities missing from the base `dataplane-base-bom`:
 1. **Public endpoint generator** - Registers an `HttpData` endpoint generator function so the data plane can issue EDR tokens with a valid public endpoint URL
 2. **Public API servlet** - Registers a JAX-RS controller on the `public` web context (port 38185) to serve data transfer requests
 3. **Key loading** - Loads PEM signing keys from files into the vault at startup
+
+### `extensions/superuser-seed`
+
+Seeds a "super-user" admin participant context into IdentityHub at startup. This bootstraps participant management via the Identity API.
+
+### `extensions/did-example-resolver`
+
+Seeds a hardcoded EC key pair into the in-memory vault so DCP modules can sign/verify tokens. Development/demo convenience only.
+
+### `extensions/dcp-patch`
+
+Registers DCP infrastructure for the control plane: JWS 2020 signature suite, trusted dataspace issuer, default scope mapping (MembershipCredential), and JSON-LD transformers.
 
 ## Adding a New Extension
 
