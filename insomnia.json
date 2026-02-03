@@ -1,0 +1,278 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-02-03T00:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v2024.1.0",
+  "resources": [
+    {
+      "_id": "wrk_pilots_dataspace",
+      "parentId": null,
+      "_type": "workspace",
+      "name": "Pilots Dataspace E2E",
+      "description": "End-to-end requests for the Pilots Dataspace (Eclipse Dataspace Components)",
+      "scope": "collection"
+    },
+    {
+      "_id": "env_base",
+      "parentId": "wrk_pilots_dataspace",
+      "_type": "environment",
+      "name": "Docker Compose (default)",
+      "data": {
+        "provider_mgmt": "http://localhost:19193",
+        "consumer_mgmt": "http://localhost:29193",
+        "provider_health": "http://localhost:18181",
+        "consumer_health": "http://localhost:28181",
+        "dataplane_health": "http://localhost:38181",
+        "dataplane_public": "http://localhost:38185",
+        "api_key": "password",
+        "counterPartyAddress": "http://provider-controlplane:19194/protocol",
+        "offer_id": "<REPLACE_WITH_OFFER_ID>",
+        "negotiation_id": "<REPLACE_WITH_NEGOTIATION_ID>",
+        "agreement_id": "<REPLACE_WITH_AGREEMENT_ID>",
+        "transfer_id": "<REPLACE_WITH_TRANSFER_ID>",
+        "edr_token": "<REPLACE_WITH_EDR_TOKEN>"
+      },
+      "isPrivate": false
+    },
+    {
+      "_id": "env_native",
+      "parentId": "wrk_pilots_dataspace",
+      "_type": "environment",
+      "name": "Native (localhost)",
+      "data": {
+        "provider_mgmt": "http://localhost:19193",
+        "consumer_mgmt": "http://localhost:29193",
+        "provider_health": "http://localhost:18181",
+        "consumer_health": "http://localhost:28181",
+        "dataplane_health": "http://localhost:38181",
+        "dataplane_public": "http://localhost:38185",
+        "api_key": "password",
+        "counterPartyAddress": "http://localhost:19194/protocol",
+        "offer_id": "<REPLACE_WITH_OFFER_ID>",
+        "negotiation_id": "<REPLACE_WITH_NEGOTIATION_ID>",
+        "agreement_id": "<REPLACE_WITH_AGREEMENT_ID>",
+        "transfer_id": "<REPLACE_WITH_TRANSFER_ID>",
+        "edr_token": "<REPLACE_WITH_EDR_TOKEN>"
+      },
+      "isPrivate": false
+    },
+    {
+      "_id": "fld_health",
+      "parentId": "wrk_pilots_dataspace",
+      "_type": "request_group",
+      "name": "1. Health Checks",
+      "description": "Verify that all runtimes are up and running"
+    },
+    {
+      "_id": "fld_provider_setup",
+      "parentId": "wrk_pilots_dataspace",
+      "_type": "request_group",
+      "name": "2. Provider Setup",
+      "description": "Create asset, policy, and contract definition on the provider"
+    },
+    {
+      "_id": "fld_consumer_flow",
+      "parentId": "wrk_pilots_dataspace",
+      "_type": "request_group",
+      "name": "3. Consumer Flow",
+      "description": "Discover catalog, negotiate contract, transfer data, and fetch the result"
+    },
+    {
+      "_id": "req_health_provider_cp",
+      "parentId": "fld_health",
+      "_type": "request",
+      "name": "Provider Control Plane Health",
+      "method": "GET",
+      "url": "{{ _.provider_health }}/api/check/health",
+      "headers": [],
+      "body": {},
+      "parameters": []
+    },
+    {
+      "_id": "req_health_consumer_cp",
+      "parentId": "fld_health",
+      "_type": "request",
+      "name": "Consumer Control Plane Health",
+      "method": "GET",
+      "url": "{{ _.consumer_health }}/api/check/health",
+      "headers": [],
+      "body": {},
+      "parameters": []
+    },
+    {
+      "_id": "req_health_dataplane",
+      "parentId": "fld_health",
+      "_type": "request",
+      "name": "Provider Data Plane Health",
+      "method": "GET",
+      "url": "{{ _.dataplane_health }}/api/check/health",
+      "headers": [],
+      "body": {},
+      "parameters": []
+    },
+    {
+      "_id": "req_create_asset",
+      "parentId": "fld_provider_setup",
+      "_type": "request",
+      "name": "Step 1 — Create Asset",
+      "description": "Register a data asset on the provider connector",
+      "method": "POST",
+      "url": "{{ _.provider_mgmt }}/management/v3/assets",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },\n  \"@id\": \"sample-asset-1\",\n  \"properties\": {\n    \"name\": \"Sample Data Asset\",\n    \"description\": \"A sample dataset for testing the dataspace\",\n    \"contenttype\": \"application/json\"\n  },\n  \"dataAddress\": {\n    \"type\": \"HttpData\",\n    \"baseUrl\": \"https://jsonplaceholder.typicode.com/todos/1\"\n  }\n}"
+      },
+      "parameters": []
+    },
+    {
+      "_id": "req_create_policy",
+      "parentId": "fld_provider_setup",
+      "_type": "request",
+      "name": "Step 2 — Create Policy Definition",
+      "description": "Create an open (unrestricted) policy",
+      "method": "POST",
+      "url": "{{ _.provider_mgmt }}/management/v3/policydefinitions",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"@context\": {\n    \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\",\n    \"odrl\": \"http://www.w3.org/ns/odrl/2/\"\n  },\n  \"@id\": \"open-policy\",\n  \"policy\": {\n    \"@context\": \"http://www.w3.org/ns/odrl.jsonld\",\n    \"@type\": \"Set\",\n    \"permission\": [],\n    \"prohibition\": [],\n    \"obligation\": []\n  }\n}"
+      },
+      "parameters": []
+    },
+    {
+      "_id": "req_create_contract_def",
+      "parentId": "fld_provider_setup",
+      "_type": "request",
+      "name": "Step 3 — Create Contract Definition",
+      "description": "Link the asset with the policy via a contract definition",
+      "method": "POST",
+      "url": "{{ _.provider_mgmt }}/management/v3/contractdefinitions",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },\n  \"@id\": \"sample-contract-def\",\n  \"accessPolicyId\": \"open-policy\",\n  \"contractPolicyId\": \"open-policy\",\n  \"assetsSelector\": []\n}"
+      },
+      "parameters": []
+    },
+    {
+      "_id": "req_catalog_request",
+      "parentId": "fld_consumer_flow",
+      "_type": "request",
+      "name": "Step 4 — Request Catalog",
+      "description": "Query the provider's catalog from the consumer side. Copy the offer @id from the response for the next step.",
+      "method": "POST",
+      "url": "{{ _.consumer_mgmt }}/management/v3/catalog/request",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },\n  \"counterPartyAddress\": \"{{ _.counterPartyAddress }}\",\n  \"protocol\": \"dataspace-protocol-http\"\n}"
+      },
+      "parameters": []
+    },
+    {
+      "_id": "req_negotiate_contract",
+      "parentId": "fld_consumer_flow",
+      "_type": "request",
+      "name": "Step 5 — Negotiate Contract",
+      "description": "Start a contract negotiation. Replace offer_id in the environment with the @id from the catalog response. Save the returned negotiation @id for polling.",
+      "method": "POST",
+      "url": "{{ _.consumer_mgmt }}/management/v3/contractnegotiations",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },\n  \"counterPartyAddress\": \"{{ _.counterPartyAddress }}\",\n  \"protocol\": \"dataspace-protocol-http\",\n  \"policy\": {\n    \"@context\": \"http://www.w3.org/ns/odrl.jsonld\",\n    \"@id\": \"{{ _.offer_id }}\",\n    \"@type\": \"Offer\",\n    \"assigner\": \"provider\",\n    \"target\": \"sample-asset-1\",\n    \"permission\": [],\n    \"prohibition\": [],\n    \"obligation\": []\n  }\n}"
+      },
+      "parameters": []
+    },
+    {
+      "_id": "req_poll_negotiation",
+      "parentId": "fld_consumer_flow",
+      "_type": "request",
+      "name": "Step 5b — Poll Negotiation Status",
+      "description": "Poll until the state is FINALIZED. Copy the contractAgreementId into the agreement_id environment variable.",
+      "method": "GET",
+      "url": "{{ _.consumer_mgmt }}/management/v3/contractnegotiations/{{ _.negotiation_id }}",
+      "headers": [
+        { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
+      ],
+      "body": {},
+      "parameters": []
+    },
+    {
+      "_id": "req_initiate_transfer",
+      "parentId": "fld_consumer_flow",
+      "_type": "request",
+      "name": "Step 6 — Initiate Transfer",
+      "description": "Start an HTTP PULL transfer. Save the returned @id as transfer_id.",
+      "method": "POST",
+      "url": "{{ _.consumer_mgmt }}/management/v3/transferprocesses",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },\n  \"counterPartyAddress\": \"{{ _.counterPartyAddress }}\",\n  \"protocol\": \"dataspace-protocol-http\",\n  \"contractId\": \"{{ _.agreement_id }}\",\n  \"assetId\": \"sample-asset-1\",\n  \"transferType\": \"HttpData-PULL\"\n}"
+      },
+      "parameters": []
+    },
+    {
+      "_id": "req_poll_transfer",
+      "parentId": "fld_consumer_flow",
+      "_type": "request",
+      "name": "Step 6b — Poll Transfer Status",
+      "description": "Poll until the state is STARTED.",
+      "method": "GET",
+      "url": "{{ _.consumer_mgmt }}/management/v3/transferprocesses/{{ _.transfer_id }}",
+      "headers": [
+        { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
+      ],
+      "body": {},
+      "parameters": []
+    },
+    {
+      "_id": "req_get_edr",
+      "parentId": "fld_consumer_flow",
+      "_type": "request",
+      "name": "Step 7a — Get EDR (Access Token)",
+      "description": "Retrieve the Endpoint Data Reference. Copy the authorization token into the edr_token environment variable.",
+      "method": "GET",
+      "url": "{{ _.consumer_mgmt }}/management/v3/edrs/{{ _.transfer_id }}/dataaddress",
+      "headers": [
+        { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
+      ],
+      "body": {},
+      "parameters": []
+    },
+    {
+      "_id": "req_fetch_data",
+      "parentId": "fld_consumer_flow",
+      "_type": "request",
+      "name": "Step 7b — Fetch Data",
+      "description": "Use the EDR token to fetch the actual data from the provider's data plane.",
+      "method": "GET",
+      "url": "{{ _.dataplane_public }}/public",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.edr_token }}" }
+      ],
+      "body": {},
+      "parameters": []
+    }
+  ]
+}
