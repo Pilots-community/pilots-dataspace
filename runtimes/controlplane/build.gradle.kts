@@ -44,7 +44,17 @@ plugins {
 
 dependencies {
     runtimeOnly(project(":extensions:example-extension"))
-    runtimeOnly(libs.edc.bom.controlplane)
+    runtimeOnly(libs.edc.bom.controlplane) {
+        exclude(group = "org.eclipse.edc", module = "decentralized-claims-core")
+        exclude(group = "org.eclipse.edc", module = "decentralized-claims-sts-remote-client")
+        exclude(group = "org.eclipse.edc", module = "identity-did-core")
+        exclude(group = "org.eclipse.edc", module = "identity-did-web")
+        exclude(group = "org.eclipse.edc", module = "trusted-issuer-configuration")
+        exclude(group = "org.eclipse.edc", module = "verifiable-credentials")
+    }
+    runtimeOnly("org.eclipse.edc:iam-mock:0.15.1")
+    implementation("org.eclipse.edc:data-plane-selector-core")
+    implementation("org.eclipse.edc:data-plane-selector-control-api")
     // uncomment the following lines to compile with Hashicorp Vault and Postgres persistence
     // runtimeOnly(libs.edc.vault.hashicorp)
     // runtimeOnly(libs.edc.bom.controlplane.sql)
