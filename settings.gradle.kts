@@ -38,5 +38,6 @@ dependencyResolutionManagement {
 
 // add dependencies
 include(":extensions:example-extension")
+include(":extensions:dataplane-public-endpoint")
 include(":runtimes:controlplane")
 include(":runtimes:dataplane")

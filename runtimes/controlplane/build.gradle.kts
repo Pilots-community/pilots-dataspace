@@ -47,6 +47,9 @@ dependencies {
     runtimeOnly(libs.edc.bom.controlplane) {
         exclude(group = "org.eclipse.edc", module = "decentralized-claims-core")
         exclude(group = "org.eclipse.edc", module = "decentralized-claims-sts-remote-client")
+        exclude(group = "org.eclipse.edc", module = "decentralized-claims-issuers-configuration")
+        exclude(group = "org.eclipse.edc", module = "decentralized-claims-service")
+        exclude(group = "org.eclipse.edc", module = "decentralized-claims-transform")
         exclude(group = "org.eclipse.edc", module = "identity-did-core")
         exclude(group = "org.eclipse.edc", module = "identity-did-web")
         exclude(group = "org.eclipse.edc", module = "trusted-issuer-configuration")

@@ -44,6 +44,7 @@ plugins {
 
 dependencies {
     runtimeOnly(libs.edc.bom.dataplane)
+    runtimeOnly(project(":extensions:dataplane-public-endpoint"))
 
     // uncomment the following lines to compile with Hashicorp Vault and Postgres persistence
     // runtimeOnly(libs.edc.vault.hashicorp)
