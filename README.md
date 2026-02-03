@@ -80,6 +80,40 @@ docker compose down
 ```
 
 
+## PostgreSQL Persistence
+
+All runtimes use PostgreSQL for persistent storage. With `edc.sql.schema.autocreate=true`, EDC's built-in `SqlSchemaBootstrapper` automatically creates all required tables on startup.
+
+### Docker Compose
+
+PostgreSQL is included in the Docker Compose setup and starts automatically. No manual database setup is needed.
+
+```bash
+docker compose up       # starts PostgreSQL + all EDC runtimes
+docker compose down     # stops services, data is preserved in the postgres-data volume
+docker compose down -v  # stops services and deletes the database volume (clean reset)
+```
+
+### Local / Native Runs
+
+When running runtimes directly with `java -jar`, you need a local PostgreSQL instance:
+
+```bash
+# Install PostgreSQL (if not already installed)
+# Ubuntu/Debian: sudo apt install postgresql
+# macOS: brew install postgresql
+
+# Create the user and databases
+sudo -u postgres psql <<'SQL'
+CREATE USER edc WITH PASSWORD 'edc';
+CREATE DATABASE provider_controlplane OWNER edc;
+CREATE DATABASE consumer_controlplane OWNER edc;
+CREATE DATABASE provider_dataplane OWNER edc;
+SQL
+```
+
+The schema bootstrapper will create tables automatically when each runtime starts.
+
 ## Distributed Deployment (Multi-Machine)
 
 To run connectors on separate machines communicating over a network tunnel, see [`deployment/distributed/README.md`](deployment/distributed/README.md).

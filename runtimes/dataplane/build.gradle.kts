@@ -48,7 +48,7 @@ dependencies {
 
     // uncomment the following lines to compile with Hashicorp Vault and Postgres persistence
     // runtimeOnly(libs.edc.vault.hashicorp)
-    // runtimeOnly(libs.edc.bom.dataplane.sql)
+    runtimeOnly(libs.edc.bom.dataplane.sql)
 
 }
 

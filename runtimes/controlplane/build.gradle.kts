@@ -60,7 +60,7 @@ dependencies {
     implementation("org.eclipse.edc:data-plane-selector-control-api")
     // uncomment the following lines to compile with Hashicorp Vault and Postgres persistence
     // runtimeOnly(libs.edc.vault.hashicorp)
-    // runtimeOnly(libs.edc.bom.controlplane.sql)
+    runtimeOnly(libs.edc.bom.controlplane.sql)
 }
 
 tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
