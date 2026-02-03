@@ -37,6 +37,7 @@ build
 distributions/**/github.properties
 
 # ignore all certificates
+config/certs/
 
 .terraform*
 
