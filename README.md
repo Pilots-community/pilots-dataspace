@@ -6,7 +6,7 @@ A downstream project based on [Eclipse Dataspace Components (EDC)](https://githu
 
 - Java 17+
 - Gradle (wrapper included)
-- Docker + docker compose
+- Docker + Docker Compose
 
 ## Build
 
