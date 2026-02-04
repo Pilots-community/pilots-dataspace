@@ -29,6 +29,14 @@ CONSUMER_VC_JWT=$(jq -r '.credential' "${SCRIPT_DIR}/assets/credentials/consumer
 PROVIDER_DID_B64=$(echo -n "${PROVIDER_DID}" | base64)
 CONSUMER_DID_B64=$(echo -n "${CONSUMER_DID}" | base64)
 
+# DSP protocol endpoints (used for DID document service entries)
+PROVIDER_DSP="http://provider-controlplane:19194/protocol"
+CONSUMER_DSP="http://consumer-controlplane:29194/protocol"
+
+# CredentialService endpoints (IdentityHub credentials API with base64-encoded DID)
+PROVIDER_CREDENTIAL_SVC="http://provider-identityhub:7091/api/credentials/v1/participants/${PROVIDER_DID_B64}"
+CONSUMER_CREDENTIAL_SVC="http://consumer-identityhub:7081/api/credentials/v1/participants/${CONSUMER_DID_B64}"
+
 echo "=== Seeding Provider IdentityHub ==="
 
 # Create provider participant context
@@ -48,6 +56,18 @@ PROVIDER_RESULT=$(curl -s -w "\n%{http_code}" -X POST "${PROVIDER_IH_IDENTITY}/v
         \"curve\": \"Ed25519\"
       }
     },
+    \"serviceEndpoints\": [
+      {
+        \"type\": \"CredentialService\",
+        \"serviceEndpoint\": \"${PROVIDER_CREDENTIAL_SVC}\",
+        \"id\": \"provider-credentialservice-1\"
+      },
+      {
+        \"type\": \"ProtocolEndpoint\",
+        \"serviceEndpoint\": \"${PROVIDER_DSP}\",
+        \"id\": \"provider-dsp\"
+      }
+    ],
     \"roles\": []
   }")
 
@@ -84,6 +104,18 @@ CONSUMER_RESULT=$(curl -s -w "\n%{http_code}" -X POST "${CONSUMER_IH_IDENTITY}/v
         \"curve\": \"Ed25519\"
       }
     },
+    \"serviceEndpoints\": [
+      {
+        \"type\": \"CredentialService\",
+        \"serviceEndpoint\": \"${CONSUMER_CREDENTIAL_SVC}\",
+        \"id\": \"consumer-credentialservice-1\"
+      },
+      {
+        \"type\": \"ProtocolEndpoint\",
+        \"serviceEndpoint\": \"${CONSUMER_DSP}\",
+        \"id\": \"consumer-dsp\"
+      }
+    ],
     \"roles\": []
   }")
 

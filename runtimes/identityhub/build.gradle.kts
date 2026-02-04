@@ -14,8 +14,6 @@ dependencies {
 
     // Hashicorp Vault
     runtimeOnly(libs.edc.vault.hashicorp)
-    runtimeOnly(libs.edc.participant.context.config.core)
-    runtimeOnly(libs.edc.participant.context.single.core)
 }
 
 tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
