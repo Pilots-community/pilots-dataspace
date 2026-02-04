@@ -44,18 +44,10 @@ plugins {
 
 dependencies {
     runtimeOnly(project(":extensions:example-extension"))
-    runtimeOnly(libs.edc.bom.controlplane) {
-        exclude(group = "org.eclipse.edc", module = "decentralized-claims-core")
-        exclude(group = "org.eclipse.edc", module = "decentralized-claims-sts-remote-client")
-        exclude(group = "org.eclipse.edc", module = "decentralized-claims-issuers-configuration")
-        exclude(group = "org.eclipse.edc", module = "decentralized-claims-service")
-        exclude(group = "org.eclipse.edc", module = "decentralized-claims-transform")
-        exclude(group = "org.eclipse.edc", module = "identity-did-core")
-        exclude(group = "org.eclipse.edc", module = "identity-did-web")
-        exclude(group = "org.eclipse.edc", module = "trusted-issuer-configuration")
-        exclude(group = "org.eclipse.edc", module = "verifiable-credentials")
-    }
-    runtimeOnly("org.eclipse.edc:iam-mock:0.15.1")
+    runtimeOnly(project(":extensions:dcp-patch"))
+    runtimeOnly(project(":extensions:did-example-resolver"))
+    runtimeOnly(libs.edc.bom.controlplane)
+    runtimeOnly("org.eclipse.edc:secrets-api:${libs.versions.edc.get()}")
     implementation("org.eclipse.edc:data-plane-selector-core")
     implementation("org.eclipse.edc:data-plane-selector-control-api")
     // Hashicorp Vault

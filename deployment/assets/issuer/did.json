@@ -1,0 +1,27 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/suites/jws-2020/v1"
+  ],
+  "id": "did:web:did-server%3A9876",
+  "verificationMethod": [
+    {
+      "id": "did:web:did-server%3A9876#issuer-key-1",
+      "type": "JsonWebKey2020",
+      "controller": "did:web:did-server%3A9876",
+      "publicKeyJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "FUoRUcEgqN7ayMITC-MsniHYEzayWypf11lMjPEctCg",
+        "y": "-Qwhyl4tNke7RLGvjRr9rdFaCJ6qzF7BAOIYZDlgoV0",
+        "kid": "issuer-key-1"
+      }
+    }
+  ],
+  "authentication": [
+    "did:web:did-server%3A9876#issuer-key-1"
+  ],
+  "assertionMethod": [
+    "did:web:did-server%3A9876#issuer-key-1"
+  ]
+}

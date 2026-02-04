@@ -35,6 +35,74 @@ services:
       timeout: 5s
       retries: 10
 
+  did-server:
+    image: nginx:alpine
+    container_name: did-server
+    ports:
+      - "9876:9876"
+    volumes:
+      - ./deployment/assets/issuer/did.json:/usr/share/nginx/html/.well-known/did.json:ro
+      - ./deployment/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9876/.well-known/did.json"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  provider-identityhub:
+    image: identityhub:latest
+    container_name: provider-identityhub
+    command: >
+      sh -c "exec java -Djava.security.egd=file:/dev/urandom
+      -Dedc.fs.config=/app/config/identityhub-provider.properties
+      -jar identityhub.jar"
+    ports:
+      - "7090:7090"
+      - "7091:7091"
+      - "7092:7092"
+      - "7093:7093"
+      - "7095:7095"
+      - "7096:7096"
+    volumes:
+      - ./config/docker/identityhub-provider.properties:/app/config/identityhub-provider.properties:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:7090/api/check/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  consumer-identityhub:
+    image: identityhub:latest
+    container_name: consumer-identityhub
+    command: >
+      sh -c "exec java -Djava.security.egd=file:/dev/urandom
+      -Dedc.fs.config=/app/config/identityhub-consumer.properties
+      -jar identityhub.jar"
+    ports:
+      - "7080:7080"
+      - "7081:7081"
+      - "7082:7082"
+      - "7083:7083"
+      - "7085:7085"
+      - "7086:7086"
+    volumes:
+      - ./config/docker/identityhub-consumer.properties:/app/config/identityhub-consumer.properties:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:7080/api/check/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   provider-controlplane:
     image: controlplane:latest
     container_name: provider-controlplane
@@ -54,6 +122,10 @@ services:
       postgres:
         condition: service_healthy
       vault:
+        condition: service_healthy
+      provider-identityhub:
+        condition: service_healthy
+      did-server:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:18181/api/check/health"]
@@ -80,6 +152,10 @@ services:
       postgres:
         condition: service_healthy
       vault:
+        condition: service_healthy
+      consumer-identityhub:
+        condition: service_healthy
+      did-server:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:28181/api/check/health"]

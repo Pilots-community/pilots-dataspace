@@ -36,8 +36,11 @@ build
 
 distributions/**/github.properties
 
-# ignore all certificates
+# Private keys, certificates, and generated credentials (created by ./generate-keys.sh)
 config/certs/
+deployment/assets/*_private.pem
+deployment/assets/*_public.pem
+deployment/assets/credentials/
 
 .terraform*
 
