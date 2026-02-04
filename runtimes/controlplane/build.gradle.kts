@@ -58,8 +58,8 @@ dependencies {
     runtimeOnly("org.eclipse.edc:iam-mock:0.15.1")
     implementation("org.eclipse.edc:data-plane-selector-core")
     implementation("org.eclipse.edc:data-plane-selector-control-api")
-    // uncomment the following lines to compile with Hashicorp Vault and Postgres persistence
-    // runtimeOnly(libs.edc.vault.hashicorp)
+    // Hashicorp Vault
+    runtimeOnly(libs.edc.vault.hashicorp)
     runtimeOnly(libs.edc.bom.controlplane.sql)
 }
 
