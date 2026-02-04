@@ -26,6 +26,8 @@ import static org.eclipse.edc.spi.constants.CoreConstants.JSON_LD;
 public class DcpPatchExtension implements ServiceExtension {
 
     public static final String NAME = "DCP Patch Extension";
+    private static final String DEFAULT_ISSUER_DID = "did:web:did-server%3A9876";
+    private static final String ISSUER_DID_SETTING = "edc.demo.dcp.issuer.did";
 
     @Inject
     private TypeManager typeManager;
@@ -59,9 +61,10 @@ public class DcpPatchExtension implements ServiceExtension {
         signatureSuiteRegistry.register(VcConstants.JWS_2020_SIGNATURE_SUITE, suite);
         monitor.info("Registered JWS 2020 signature suite");
 
-        // register the dataspace issuer as a trusted issuer (NGINX-hosted DID)
-        trustedIssuerRegistry.register(new Issuer("did:web:did-server%3A9876", Map.of()), WILDCARD);
-        monitor.info("Registered trusted issuer: did:web:did-server%%3A9876");
+        // register the dataspace issuer as a trusted issuer
+        var issuerDid = context.getSetting(ISSUER_DID_SETTING, DEFAULT_ISSUER_DID);
+        trustedIssuerRegistry.register(new Issuer(issuerDid, Map.of()), WILDCARD);
+        monitor.info("Registered trusted issuer: %s".formatted(issuerDid));
 
         // register a default scope provider that requests MembershipCredential for all DSP interactions
         var contextMappingFunction = new DefaultScopeMappingFunction(Set.of("org.eclipse.edc.vc.type:MembershipCredential:read"));

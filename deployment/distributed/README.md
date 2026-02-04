@@ -1,6 +1,6 @@
 # Distributed Multi-Machine Deployment
 
-Run EDC connectors on separate machines so they communicate over the network instead of a shared Docker network.
+Run EDC connectors on separate machines so they communicate over the network instead of a shared Docker network. Uses DCP (Decentralized Claims Protocol) for identity with did:web DIDs, IdentityHub, and Verifiable Credentials.
 
 ## Architecture
 
@@ -11,6 +11,9 @@ Machine A                                Machine B
 +-------------------------------+        +-------------------------------+
 | docker-compose.yml            |        | docker-compose.yml            |
 |                               |        |                               |
+| provider-identityhub   7090+  |        | provider-identityhub   7090+  |
+| consumer-identityhub   7080+  |        | consumer-identityhub   7080+  |
+|                               |        |                               |
 | provider-controlplane  18181  | <----> | provider-controlplane  18181  |
 |   mgmt:19193 DSP:19194       |        |   mgmt:19193 DSP:19194       |
 |                               |        |                               |
@@ -19,33 +22,43 @@ Machine A                                Machine B
 |                               |        |                               |
 | provider-dataplane     38181  | <----> | provider-dataplane     38181  |
 |   public:38185               |        |   public:38185               |
+|                               |        |                               |
+| did-server             9876   |        | did-server             9876   |
+| vault                  8200   |        | vault                  8200   |
+| postgres              15432   |        | postgres              15432   |
 +-------------------------------+        +-------------------------------+
 ```
 
-Both machines run identical services on identical ports. No port conflicts since they're on different hosts. The `-D` JVM flags in the compose file override cross-network properties with `MY_PUBLIC_URL` so the remote machine can reach back.
+Both machines run identical services on identical ports. No port conflicts since they're on different hosts.
 
-## How `MY_PUBLIC_URL` Works
+## How `MY_PUBLIC_HOST` Works
 
-EDC connectors exchange callback URLs during negotiation and transfer. In the single-machine `docker-compose.yml`, these URLs use Docker service names (e.g. `http://provider-controlplane:19194`). That only works when both connectors share the same Docker network.
+EDC connectors exchange callback URLs during negotiation and transfer. In the single-machine `docker-compose.yml` (project root), these URLs use Docker service names (e.g. `http://provider-controlplane:19194`). That only works when both connectors share the same Docker network.
 
-In a distributed setup, the remote machine can't resolve Docker service names. `MY_PUBLIC_URL` is the address that **the other machine** will use to reach **this machine**. It gets injected into the `-D` JVM flags that override callback and public endpoint URLs.
+In a distributed setup, the remote machine can't resolve Docker service names. `MY_PUBLIC_HOST` is the IP or hostname that **the other machine** will use to reach **this machine**. It gets injected into:
 
-**You must set `MY_PUBLIC_URL` to an address that the remote machine's Docker containers can connect to.** `http://localhost` will NOT work — inside a container, `localhost` refers to the container itself.
+- **DID identifiers**: `did:web:<MY_PUBLIC_HOST>%3A7093` (provider), `did:web:<MY_PUBLIC_HOST>%3A7083` (consumer)
+- **DSP callback URLs**: `http://<MY_PUBLIC_HOST>:19194/protocol`
+- **IdentityHub hostname**: so DID documents are served with the correct Host header
+- **STS key aliases**: so the embedded STS uses the correct key pairs
+- **Trusted issuer DID**: `did:web:<MY_PUBLIC_HOST>%3A9876`
+- **Data plane public URL**: `http://<MY_PUBLIC_HOST>:38185/public`
+
+**You must set `MY_PUBLIC_HOST` to an address that the remote machine's Docker containers can connect to.** `localhost` will NOT work -- inside a container, `localhost` refers to the container itself.
 
 ## Prerequisites
 
 - Docker and Docker Compose
-- Docker images built (`./gradlew dockerize` in the project root)
-- Token signing keys generated (see root [README.md](../../README.md#generate-token-signing-keys))
-- Both machines must be able to reach each other on ports 19194, 29194, and 38185 (see [Ports That Must Be Reachable](#ports-that-must-be-reachable))
+- Docker images built (`./gradlew dockerize` in the project root) -- needs `controlplane`, `dataplane`, and `identityhub` images
+- Python 3 with the `cryptography` library (for VC generation in seed.sh)
+- Issuer private key at `deployment/assets/issuer_private.pem`
+- Both machines must be able to reach each other on the required ports (see [Ports That Must Be Reachable](#ports-that-must-be-reachable))
 
-## Choosing `MY_PUBLIC_URL` for Your Network Setup
+## Choosing `MY_PUBLIC_HOST` for Your Network Setup
 
 ### Same LAN / Same Network
 
-If both machines are on the same local network (e.g. office WiFi, home network), use each machine's LAN IP address.
-
-Find your LAN IP:
+If both machines are on the same local network, use each machine's LAN IP address.
 
 ```bash
 # Linux
@@ -55,143 +68,56 @@ hostname -I | awk '{print $1}'
 ipconfig getifaddr en0
 ```
 
-Example: if Machine A's LAN IP is `192.168.1.50`, set `MY_PUBLIC_URL=http://192.168.1.50` in Machine A's `.env`.
-
-Verify connectivity from Machine B:
-
-```bash
-curl http://192.168.1.50:19194  # should get a response (even an error is fine — it means the port is reachable)
-```
-
 ### Different Networks (not directly routable)
-
-If the machines are on different networks (e.g. different offices, home vs cloud, behind NAT), they can't reach each other by LAN IP. You need a tunnel or public IP.
 
 #### Tailscale (recommended)
 
-[Tailscale](https://tailscale.com/) creates a private WireGuard mesh network. Each machine gets a stable IP (e.g. `100.64.x.x`) that works across any network — home, office, cloud, mobile.
+[Tailscale](https://tailscale.com/) creates a private WireGuard mesh network. Each machine gets a stable IP (e.g. `100.64.x.x`) that works across any network.
 
 1. Install Tailscale on both machines: https://tailscale.com/download
 2. Run `tailscale up` on each
-3. Get each machine's Tailscale IP:
-   ```bash
-   tailscale ip -4
-   ```
-4. Set `MY_PUBLIC_URL=http://<tailscale-ip>` in each machine's `.env`
+3. Get each machine's Tailscale IP: `tailscale ip -4`
 
 All ports are automatically reachable between machines with no firewall configuration needed.
 
-Example: if Machine A's Tailscale IP is `100.100.50.1`:
-```
-# Machine A's .env
-MY_PUBLIC_URL=http://100.100.50.1
-```
+#### Other Options
 
-#### WireGuard / VPN
+Any VPN, WireGuard tunnel, or cloud VM with a public IP works. Use the routable IP as `MY_PUBLIC_HOST`. Make sure the required ports are open.
 
-Any VPN that assigns routable IPs works the same way as Tailscale. Use the VPN-assigned IP as `MY_PUBLIC_URL`.
+### Single-Machine Testing (no Tailscale)
 
-#### Cloud VM with Public IP
-
-If one or both machines are cloud VMs with public IPs, use the public IP directly. Make sure ports 19194, 29194, and 38185 are open in the cloud security group / firewall.
-
-```
-MY_PUBLIC_URL=http://203.0.113.42
-```
-
-#### ngrok (last resort)
-
-[ngrok](https://ngrok.com/) exposes local ports via public HTTPS URLs. Since each tunnel gets a **different hostname and port**, it doesn't work with the single `MY_PUBLIC_URL` variable. You need to edit the compose file directly.
-
-1. Start a tunnel for each port:
-   ```bash
-   ngrok http 19194  # provider DSP        -> e.g. https://abc123.ngrok.io
-   ngrok http 29194  # consumer DSP        -> e.g. https://def456.ngrok.io
-   ngrok http 38185  # data plane public   -> e.g. https://ghi789.ngrok.io
-   ```
-2. Edit `docker-compose.yml` and replace each `${MY_PUBLIC_URL}:<port>` with the corresponding ngrok URL (no port number — ngrok routes by hostname):
-   - `-Dedc.dsp.callback.address=https://abc123.ngrok.io/protocol` (provider CP)
-   - `-Dedc.dsp.callback.address=https://def456.ngrok.io/protocol` (consumer CP)
-   - `-Dedc.receiver.http.endpoint=https://def456.ngrok.io/protocol` (consumer CP)
-   - `-Dedc.dataplane.api.public.baseurl=https://ghi789.ngrok.io/public` (data plane)
-
-ngrok works for quick tests but Tailscale is simpler for ongoing use.
-
-### Single-Machine Testing
-
-To test the distributed compose file on one machine (e.g. to verify the `-D` overrides work), use the Docker bridge gateway IP. This is the IP the host is reachable at from inside Docker containers.
+To test on one machine without Tailscale, use the Docker bridge gateway IP:
 
 ```bash
 # Find the Docker bridge gateway IP (usually 172.17.0.1)
-ip route | grep docker0 | awk '{print $NF}'
+ip addr show docker0 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1
 ```
 
-```
-# .env
-MY_PUBLIC_URL=http://172.17.0.1
-```
-
-On macOS/Windows with Docker Desktop, use `http://host.docker.internal` instead.
+On macOS/Windows with Docker Desktop, use `host.docker.internal` instead.
 
 ## Quick Start
 
-1. Copy the env file and set your public URL:
+1. Start the services:
    ```bash
    cd deployment/distributed
-   cp .env.example .env
+   MY_PUBLIC_HOST=<your-ip> docker compose up -d
    ```
 
-2. Edit `.env` and set `MY_PUBLIC_URL` to this machine's reachable address (see [Choosing MY_PUBLIC_URL](#choosing-my_public_url-for-your-network-setup) above):
-   ```properties
-   MY_PUBLIC_URL=http://192.168.1.50   # LAN IP, Tailscale IP, public IP, etc.
-   ```
-
-3. Start the services:
+2. Wait for all containers to be healthy:
    ```bash
-   docker compose up
+   docker ps
    ```
 
-4. Verify health:
+3. Run the seed script to create participant identities and credentials:
    ```bash
-   curl http://localhost:18181/api/check/health  # provider CP
-   curl http://localhost:28181/api/check/health  # consumer CP
-   curl http://localhost:38181/api/check/health  # data plane
+   MY_PUBLIC_HOST=<your-ip> ./seed.sh
    ```
 
-5. Repeat on the second machine with its own `MY_PUBLIC_URL`.
+4. Repeat on the second machine with its own `MY_PUBLIC_HOST`.
 
-## Distributing Docker Images
+## End-to-End Example
 
-If the second machine doesn't have the source code to build images, transfer them:
-
-```bash
-# On the build machine
-docker save controlplane:latest | gzip > controlplane.tar.gz
-docker save dataplane:latest | gzip > dataplane.tar.gz
-
-# Copy to the other machine (scp, rsync, USB, etc.)
-scp controlplane.tar.gz dataplane.tar.gz user@machine-b:~/
-
-# On the other machine
-docker load < controlplane.tar.gz
-docker load < dataplane.tar.gz
-```
-
-## Ports That Must Be Reachable
-
-The remote machine needs to reach these ports through the tunnel:
-
-| Port | Service | Why |
-|------|---------|-----|
-| 19194 | Provider CP DSP | Catalog requests, negotiation callbacks |
-| 29194 | Consumer CP DSP | Negotiation callbacks, EDR notifications |
-| 38185 | Data Plane public | Data fetch via EDR token |
-
-Management ports (19193, 29193) only need to be reachable from your local terminal, not from the remote machine.
-
-## End-to-End Example Across Two Machines
-
-In this example, Machine A is the **provider** (owns the data) and Machine B is the **consumer** (requests data). Replace `<A_PUBLIC_URL>` with Machine A's tunnel address (e.g. `http://100.64.0.1`).
+In this example, Machine A is the **provider** (owns the data) and Machine B is the **consumer** (requests data). Replace `<HOST>` with Machine A's `MY_PUBLIC_HOST` value and `<PROVIDER_DID>` with `did:web:<HOST>%3A7093`.
 
 ### On Machine A: Set Up the Data (Steps 1-3)
 
@@ -200,19 +126,12 @@ In this example, Machine A is the **provider** (owns the data) and Machine B is 
 ```bash
 curl -X POST http://localhost:19193/management/v3/assets \
   -H "Content-Type: application/json" \
-  -H "X-Api-Key: password" \
+  -H "x-api-key: password" \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "@id": "sample-asset-1",
-    "properties": {
-      "name": "Sample Data Asset",
-      "description": "A sample dataset for testing the dataspace",
-      "contenttype": "application/json"
-    },
-    "dataAddress": {
-      "type": "HttpData",
-      "baseUrl": "https://jsonplaceholder.typicode.com/todos/1"
-    }
+    "properties": { "name": "Sample Data Asset", "contenttype": "application/json" },
+    "dataAddress": { "type": "HttpData", "baseUrl": "https://jsonplaceholder.typicode.com/todos/1" }
   }'
 ```
 
@@ -221,20 +140,11 @@ curl -X POST http://localhost:19193/management/v3/assets \
 ```bash
 curl -X POST http://localhost:19193/management/v3/policydefinitions \
   -H "Content-Type: application/json" \
-  -H "X-Api-Key: password" \
+  -H "x-api-key: password" \
   -d '{
-    "@context": {
-      "@vocab": "https://w3id.org/edc/v0.0.1/ns/",
-      "odrl": "http://www.w3.org/ns/odrl/2/"
-    },
+    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/", "odrl": "http://www.w3.org/ns/odrl/2/" },
     "@id": "open-policy",
-    "policy": {
-      "@context": "http://www.w3.org/ns/odrl.jsonld",
-      "@type": "Set",
-      "permission": [],
-      "prohibition": [],
-      "obligation": []
-    }
+    "policy": { "@type": "odrl:Set", "odrl:permission": [], "odrl:prohibition": [], "odrl:obligation": [] }
   }'
 ```
 
@@ -243,7 +153,7 @@ curl -X POST http://localhost:19193/management/v3/policydefinitions \
 ```bash
 curl -X POST http://localhost:19193/management/v3/contractdefinitions \
   -H "Content-Type: application/json" \
-  -H "X-Api-Key: password" \
+  -H "x-api-key: password" \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "@id": "sample-contract-def",
@@ -260,15 +170,17 @@ curl -X POST http://localhost:19193/management/v3/contractdefinitions \
 ```bash
 curl -X POST http://localhost:29193/management/v3/catalog/request \
   -H "Content-Type: application/json" \
-  -H "X-Api-Key: password" \
+  -H "x-api-key: password" \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
-    "counterPartyAddress": "<A_PUBLIC_URL>:19194/protocol",
+    "@type": "CatalogRequest",
+    "counterPartyAddress": "http://<HOST>:19194/protocol",
+    "counterPartyId": "<PROVIDER_DID>",
     "protocol": "dataspace-protocol-http"
   }'
 ```
 
-In the response, find the `dcat:dataset` entry for `sample-asset-1`. Inside it, `odrl:hasPolicy` contains the offer. Copy the `@id` of that policy — this is the **offer ID** (a Base64-encoded string).
+In the response, find `dcat:dataset` -> `odrl:hasPolicy` -> `@id`. That's the **offer ID**.
 
 #### 5. Negotiate a Contract
 
@@ -277,20 +189,19 @@ Replace `<OFFER_ID>` with the offer ID from step 4:
 ```bash
 curl -X POST http://localhost:29193/management/v3/contractnegotiations \
   -H "Content-Type: application/json" \
-  -H "X-Api-Key: password" \
+  -H "x-api-key: password" \
   -d '{
-    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
-    "counterPartyAddress": "<A_PUBLIC_URL>:19194/protocol",
+    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/", "odrl": "http://www.w3.org/ns/odrl/2/" },
+    "@type": "ContractRequest",
+    "counterPartyAddress": "http://<HOST>:19194/protocol",
+    "counterPartyId": "<PROVIDER_DID>",
     "protocol": "dataspace-protocol-http",
     "policy": {
-      "@context": "http://www.w3.org/ns/odrl.jsonld",
+      "@type": "odrl:Offer",
       "@id": "<OFFER_ID>",
-      "@type": "Offer",
-      "assigner": "provider",
-      "target": "sample-asset-1",
-      "permission": [],
-      "prohibition": [],
-      "obligation": []
+      "odrl:target": { "@id": "sample-asset-1" },
+      "odrl:assigner": { "@id": "<PROVIDER_DID>" },
+      "odrl:permission": [], "odrl:prohibition": [], "odrl:obligation": []
     }
   }'
 ```
@@ -299,22 +210,20 @@ Poll until `state` is `FINALIZED`:
 
 ```bash
 curl http://localhost:29193/management/v3/contractnegotiations/<NEGOTIATION_ID> \
-  -H "X-Api-Key: password"
+  -H "x-api-key: password"
 ```
 
 Copy the `contractAgreementId` from the response.
 
 #### 6. Initiate a Data Transfer
 
-Replace `<AGREEMENT_ID>` with the contract agreement ID from step 5:
-
 ```bash
 curl -X POST http://localhost:29193/management/v3/transferprocesses \
   -H "Content-Type: application/json" \
-  -H "X-Api-Key: password" \
+  -H "x-api-key: password" \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
-    "counterPartyAddress": "<A_PUBLIC_URL>:19194/protocol",
+    "counterPartyAddress": "http://<HOST>:19194/protocol",
     "protocol": "dataspace-protocol-http",
     "contractId": "<AGREEMENT_ID>",
     "assetId": "sample-asset-1",
@@ -326,7 +235,7 @@ Poll until `state` is `STARTED`:
 
 ```bash
 curl http://localhost:29193/management/v3/transferprocesses/<TRANSFER_ID> \
-  -H "X-Api-Key: password"
+  -H "x-api-key: password"
 ```
 
 #### 7. Fetch Data via EDR
@@ -335,20 +244,53 @@ Retrieve the Endpoint Data Reference:
 
 ```bash
 curl http://localhost:29193/management/v3/edrs/<TRANSFER_ID>/dataaddress \
-  -H "X-Api-Key: password"
+  -H "x-api-key: password"
 ```
 
-The response contains an `endpoint` URL and an `authorization` token. In the distributed setup the `endpoint` will already contain Machine A's public URL (since the data plane's `edc.dataplane.api.public.baseurl` was set to `MY_PUBLIC_URL`). Use the token to fetch the data:
+The response contains an `endpoint` URL (using Machine A's public IP) and an `authorization` token. Fetch the data:
 
 ```bash
 curl <ENDPOINT_URL> \
   -H "Authorization: Bearer <TOKEN>"
 ```
 
-This returns the data from the asset's backing data source.
+Expected response:
 
-## Security Notes
+```json
+{
+  "message": "Data transfer successful via EDC data plane",
+  "jti": "c90bca94-7f3d-4aae-8454-be1073677284"
+}
+```
 
-- This setup uses `iam-mock` (no real identity verification) and plain HTTP. It is intended for **development and testing only**.
-- Do not expose management ports (19193, 29193) to untrusted networks.
-- For production, configure proper IAM (e.g. DAPS/DIM), TLS, and network policies.
+## Distributing Docker Images
+
+If the second machine doesn't have the source code to build images, transfer them:
+
+```bash
+# On the build machine
+docker save controlplane:latest dataplane:latest identityhub:latest | gzip > edc-images.tar.gz
+
+# Copy to the other machine
+scp edc-images.tar.gz user@machine-b:~/
+
+# On the other machine
+docker load < edc-images.tar.gz
+```
+
+## Ports That Must Be Reachable
+
+The remote machine needs to reach these ports:
+
+| Port | Service | Why |
+|------|---------|-----|
+| 7081 | Consumer IdentityHub Credentials API | VP/VC presentation requests |
+| 7083 | Consumer IdentityHub DID endpoint | DID document resolution |
+| 7091 | Provider IdentityHub Credentials API | VP/VC presentation requests |
+| 7093 | Provider IdentityHub DID endpoint | DID document resolution |
+| 9876 | DID Server (nginx) | Issuer DID document resolution |
+| 19194 | Provider CP DSP | Catalog requests, negotiation callbacks |
+| 29194 | Consumer CP DSP | Negotiation callbacks |
+| 38185 | Data Plane public | Data fetch via EDR token |
+
+Management ports (19193, 29193) only need to be reachable from your local terminal, not from the remote machine.
