@@ -40,20 +40,17 @@ This project uses the **Decentralized Claims Protocol (DCP)** for identity, repl
 | Consumer IdentityHub | `config/identityhub-consumer.properties` | base: 7080, creds: 7081, identity: 7082, DID: 7083, version: 7085, STS: 7086 |
 | DID Server (NGINX) | — | 9876 |
 
-## Generate Token Signing Keys
+## Generate Keys and Credentials
 
-The data plane requires EC keys for signing EDR access tokens:
+Run this once before building or starting services. It generates all private keys, the issuer DID document, and pre-signed Verifiable Credentials:
 
 ```bash
-mkdir -p config/certs
-
-# Generate EC private key
-openssl ecparam -name prime256v1 -genkey -noout | \
-  openssl pkcs8 -topk8 -nocrypt -out config/certs/private-key.pem
-
-# Extract public key
-openssl ec -in config/certs/private-key.pem -pubout -out config/certs/public-key.pem
+./generate-keys.sh
 ```
+
+Requires Python 3 with the `cryptography` library (`pip install cryptography`).
+
+Private keys are gitignored and never committed to the repository. Each developer/machine generates its own keys.
 
 ## Run Locally
 
