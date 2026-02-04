@@ -44,7 +44,7 @@ services:
       - ./deployment/assets/issuer/did.json:/usr/share/nginx/html/.well-known/did.json:ro
       - ./deployment/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9876/.well-known/did.json"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9876/.well-known/did.json"]
       interval: 5s
       timeout: 5s
       retries: 10

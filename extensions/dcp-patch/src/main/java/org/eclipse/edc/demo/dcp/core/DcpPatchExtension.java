@@ -52,12 +52,16 @@ public class DcpPatchExtension implements ServiceExtension {
 
     @Override
     public void initialize(ServiceExtensionContext context) {
+        var monitor = context.getMonitor().withPrefix("DcpPatch");
+
         // register JWS 2020 signature suite
         var suite = new Jws2020SignatureSuite(typeManager.getMapper(JSON_LD));
         signatureSuiteRegistry.register(VcConstants.JWS_2020_SIGNATURE_SUITE, suite);
+        monitor.info("Registered JWS 2020 signature suite");
 
         // register the dataspace issuer as a trusted issuer (NGINX-hosted DID)
         trustedIssuerRegistry.register(new Issuer("did:web:did-server%3A9876", Map.of()), WILDCARD);
+        monitor.info("Registered trusted issuer: did:web:did-server%%3A9876");
 
         // register a default scope provider that requests MembershipCredential for all DSP interactions
         var contextMappingFunction = new DefaultScopeMappingFunction(Set.of("org.eclipse.edc.vc.type:MembershipCredential:read"));
@@ -65,11 +69,13 @@ public class DcpPatchExtension implements ServiceExtension {
         policyEngine.registerPostValidator(RequestCatalogPolicyContext.class, contextMappingFunction::apply);
         policyEngine.registerPostValidator(RequestContractNegotiationPolicyContext.class, contextMappingFunction::apply);
         policyEngine.registerPostValidator(RequestTransferProcessPolicyContext.class, contextMappingFunction::apply);
+        monitor.info("Registered scope mapping for MembershipCredential");
 
         // register scope extractor for DataAccess constraints
         scopeExtractorRegistry.registerScopeExtractor(new DataAccessCredentialScopeExtractor());
 
         // register JSON-LD transformer for credential processing
         typeTransformerRegistry.register(new JsonValueToGenericTypeTransformer(typeManager, JSON_LD));
+        monitor.info("DCP Patch Extension initialized successfully");
     }
 }

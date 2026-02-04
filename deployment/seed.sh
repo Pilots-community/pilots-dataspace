@@ -25,6 +25,10 @@ CONSUMER_MGMT="http://localhost:29193/management"
 PROVIDER_VC_JWT=$(jq -r '.credential' "${SCRIPT_DIR}/assets/credentials/provider/membership-credential.json")
 CONSUMER_VC_JWT=$(jq -r '.credential' "${SCRIPT_DIR}/assets/credentials/consumer/membership-credential.json")
 
+# Base64-encoded participant IDs for API URL paths
+PROVIDER_DID_B64=$(echo -n "${PROVIDER_DID}" | base64)
+CONSUMER_DID_B64=$(echo -n "${CONSUMER_DID}" | base64)
+
 echo "=== Seeding Provider IdentityHub ==="
 
 # Create provider participant context
@@ -33,15 +37,15 @@ PROVIDER_RESULT=$(curl -s -w "\n%{http_code}" -X POST "${PROVIDER_IH_IDENTITY}/v
   -H "Content-Type: application/json" \
   -H "x-api-key: ${SUPERUSER_KEY}" \
   -d "{
-    \"participantId\": \"${PROVIDER_DID}\",
+    \"participantContextId\": \"${PROVIDER_DID}\",
     \"did\": \"${PROVIDER_DID}\",
     \"active\": true,
     \"key\": {
       \"keyId\": \"${PROVIDER_DID}#key-1\",
       \"privateKeyAlias\": \"${PROVIDER_DID}-alias\",
       \"keyGeneratorParams\": {
-        \"algorithm\": \"EC\",
-        \"curve\": \"secp256r1\"
+        \"algorithm\": \"EdDSA\",
+        \"curve\": \"Ed25519\"
       }
     },
     \"roles\": []
@@ -51,9 +55,10 @@ PROVIDER_HTTP_CODE=$(echo "$PROVIDER_RESULT" | tail -1)
 PROVIDER_BODY=$(echo "$PROVIDER_RESULT" | head -n -1)
 echo "  HTTP ${PROVIDER_HTTP_CODE}: ${PROVIDER_BODY}"
 
-# Extract the provider API key for later use
+# Extract the provider API key and STS client secret for later use
 if [ "$PROVIDER_HTTP_CODE" = "200" ] || [ "$PROVIDER_HTTP_CODE" = "201" ] || [ "$PROVIDER_HTTP_CODE" = "204" ]; then
   PROVIDER_API_KEY=$(echo "$PROVIDER_BODY" | jq -r '.apiKey // empty' 2>/dev/null || echo "")
+  PROVIDER_CLIENT_SECRET=$(echo "$PROVIDER_BODY" | jq -r '.clientSecret // empty' 2>/dev/null || echo "")
   if [ -n "$PROVIDER_API_KEY" ]; then
     echo "  Provider API Key: ${PROVIDER_API_KEY}"
   fi
@@ -68,15 +73,15 @@ CONSUMER_RESULT=$(curl -s -w "\n%{http_code}" -X POST "${CONSUMER_IH_IDENTITY}/v
   -H "Content-Type: application/json" \
   -H "x-api-key: ${SUPERUSER_KEY}" \
   -d "{
-    \"participantId\": \"${CONSUMER_DID}\",
+    \"participantContextId\": \"${CONSUMER_DID}\",
     \"did\": \"${CONSUMER_DID}\",
     \"active\": true,
     \"key\": {
       \"keyId\": \"${CONSUMER_DID}#key-1\",
       \"privateKeyAlias\": \"${CONSUMER_DID}-alias\",
       \"keyGeneratorParams\": {
-        \"algorithm\": \"EC\",
-        \"curve\": \"secp256r1\"
+        \"algorithm\": \"EdDSA\",
+        \"curve\": \"Ed25519\"
       }
     },
     \"roles\": []
@@ -88,19 +93,47 @@ echo "  HTTP ${CONSUMER_HTTP_CODE}: ${CONSUMER_BODY}"
 
 if [ "$CONSUMER_HTTP_CODE" = "200" ] || [ "$CONSUMER_HTTP_CODE" = "201" ] || [ "$CONSUMER_HTTP_CODE" = "204" ]; then
   CONSUMER_API_KEY=$(echo "$CONSUMER_BODY" | jq -r '.apiKey // empty' 2>/dev/null || echo "")
+  CONSUMER_CLIENT_SECRET=$(echo "$CONSUMER_BODY" | jq -r '.clientSecret // empty' 2>/dev/null || echo "")
   if [ -n "$CONSUMER_API_KEY" ]; then
     echo "  Consumer API Key: ${CONSUMER_API_KEY}"
   fi
 fi
 
 echo ""
+echo "=== Activating Participant Contexts ==="
+
+# Participant contexts start in CREATED state. We must activate them before
+# DID publishing or STS authentication will work.
+echo "Activating provider participant context..."
+curl -s -w " HTTP %{http_code}" -X POST "${PROVIDER_IH_IDENTITY}/v1alpha/participants/${PROVIDER_DID_B64}/state?isActive=true" \
+  -H "x-api-key: ${SUPERUSER_KEY}" && echo "" || echo " FAILED"
+
+echo "Activating consumer participant context..."
+curl -s -w " HTTP %{http_code}" -X POST "${CONSUMER_IH_IDENTITY}/v1alpha/participants/${CONSUMER_DID_B64}/state?isActive=true" \
+  -H "x-api-key: ${SUPERUSER_KEY}" && echo "" || echo " FAILED"
+
+echo ""
+echo "=== Publishing DID Documents ==="
+
+# Publish DIDs so they're resolvable via did:web
+echo "Publishing provider DID..."
+curl -s -w " HTTP %{http_code}" -X POST "${PROVIDER_IH_IDENTITY}/v1alpha/participants/${PROVIDER_DID_B64}/dids/publish" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: ${SUPERUSER_KEY}" \
+  -d "{\"did\": \"${PROVIDER_DID}\"}" && echo "" || echo " FAILED"
+
+echo "Publishing consumer DID..."
+curl -s -w " HTTP %{http_code}" -X POST "${CONSUMER_IH_IDENTITY}/v1alpha/participants/${CONSUMER_DID_B64}/dids/publish" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: ${SUPERUSER_KEY}" \
+  -d "{\"did\": \"${CONSUMER_DID}\"}" && echo "" || echo " FAILED"
+
+echo ""
 echo "=== Storing STS Client Secrets ==="
 
-# The connector needs an STS client secret to authenticate with the embedded STS in IdentityHub.
-# We store it via the Secrets API on the connector's management endpoint.
-# The STS client secret must also be stored in the IdentityHub's vault.
-
-STS_CLIENT_SECRET="password"
+# The connector needs the STS client secret to authenticate with the embedded STS in IdentityHub.
+# The secret was auto-generated during participant context creation and returned in the response.
+# We store it in the connector vault so the connector can use it for STS token requests.
 
 # Store the STS client secret in the provider connector vault via Secrets API
 echo "Storing STS client secret in provider connector..."
@@ -111,7 +144,7 @@ curl -s -X POST "${PROVIDER_MGMT}/v3/secrets" \
     \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
     \"@type\": \"Secret\",
     \"@id\": \"${PROVIDER_DID}-sts-client-secret\",
-    \"value\": \"${STS_CLIENT_SECRET}\"
+    \"value\": \"${PROVIDER_CLIENT_SECRET}\"
   }" && echo " OK" || echo " FAILED"
 
 # Store the STS client secret in the consumer connector vault via Secrets API
@@ -123,7 +156,7 @@ curl -s -X POST "${CONSUMER_MGMT}/v3/secrets" \
     \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
     \"@type\": \"Secret\",
     \"@id\": \"${CONSUMER_DID}-sts-client-secret\",
-    \"value\": \"${STS_CLIENT_SECRET}\"
+    \"value\": \"${CONSUMER_CLIENT_SECRET}\"
   }" && echo " OK" || echo " FAILED"
 
 echo ""
@@ -135,35 +168,55 @@ echo "=== Storing Membership Credentials ==="
 
 # For simplicity, we use the superuser key with participant ID in the path
 
+# Helper function to build a credential storage request from a VC JWT
+store_credential() {
+  local IH_IDENTITY="$1"
+  local PARTICIPANT_DID="$2"
+  local PARTICIPANT_DID_B64="$3"
+  local VC_JWT="$4"
+
+  # Decode JWT payload to extract VC fields and build the request manifest
+  python3 -c "
+import base64, json, sys
+jwt = sys.argv[1]
+participant_did = sys.argv[2]
+payload = jwt.split('.')[1]
+payload += '=' * (4 - len(payload) % 4)
+decoded = json.loads(base64.urlsafe_b64decode(payload))
+vc = decoded['vc']
+credential = {
+    'id': vc.get('id'),
+    'type': vc.get('type', []),
+    'issuer': {'id': vc.get('issuer') if isinstance(vc.get('issuer'), str) else vc.get('issuer', {}).get('id')},
+    'issuanceDate': vc.get('issuanceDate'),
+    'expirationDate': vc.get('expirationDate'),
+    'credentialSubject': [vc.get('credentialSubject')] if isinstance(vc.get('credentialSubject'), dict) else vc.get('credentialSubject', [])
+}
+manifest = {
+    'id': 'membership-credential',
+    'participantContextId': participant_did,
+    'verifiableCredentialContainer': {
+        'rawVc': jwt,
+        'format': 'VC1_0_JWT',
+        'credential': credential
+    }
+}
+print(json.dumps(manifest))
+" "$VC_JWT" "$PARTICIPANT_DID" > /tmp/vc-manifest.json
+
+  curl -s -X POST "${IH_IDENTITY}/v1alpha/participants/${PARTICIPANT_DID_B64}/credentials" \
+    -H "Content-Type: application/json" \
+    -H "x-api-key: ${SUPERUSER_KEY}" \
+    -d @/tmp/vc-manifest.json
+}
+
 # Store provider's VC
 echo "Storing provider MembershipCredential..."
-curl -s -X POST "${PROVIDER_IH_IDENTITY}/v1alpha/participants/${PROVIDER_DID}/credentials" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: ${SUPERUSER_KEY}" \
-  -d "{
-    \"credentialId\": \"membership-credential\",
-    \"issuerId\": \"did:web:did-server%3A9876\",
-    \"holderId\": \"${PROVIDER_DID}\",
-    \"issuanceDate\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
-    \"expirationDate\": \"2036-01-01T00:00:00Z\",
-    \"vcJwt\": \"${PROVIDER_VC_JWT}\",
-    \"participantId\": \"${PROVIDER_DID}\"
-  }" && echo " OK" || echo " FAILED"
+store_credential "${PROVIDER_IH_IDENTITY}" "${PROVIDER_DID}" "${PROVIDER_DID_B64}" "${PROVIDER_VC_JWT}" && echo " OK" || echo " FAILED"
 
 # Store consumer's VC
 echo "Storing consumer MembershipCredential..."
-curl -s -X POST "${CONSUMER_IH_IDENTITY}/v1alpha/participants/${CONSUMER_DID}/credentials" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: ${SUPERUSER_KEY}" \
-  -d "{
-    \"credentialId\": \"membership-credential\",
-    \"issuerId\": \"did:web:did-server%3A9876\",
-    \"holderId\": \"${CONSUMER_DID}\",
-    \"issuanceDate\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
-    \"expirationDate\": \"2036-01-01T00:00:00Z\",
-    \"vcJwt\": \"${CONSUMER_VC_JWT}\",
-    \"participantId\": \"${CONSUMER_DID}\"
-  }" && echo " OK" || echo " FAILED"
+store_credential "${CONSUMER_IH_IDENTITY}" "${CONSUMER_DID}" "${CONSUMER_DID_B64}" "${CONSUMER_VC_JWT}" && echo " OK" || echo " FAILED"
 
 echo ""
 echo "=== Seeding Complete ==="

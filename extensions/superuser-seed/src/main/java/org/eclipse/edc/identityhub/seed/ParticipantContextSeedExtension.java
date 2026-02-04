@@ -3,6 +3,7 @@ package org.eclipse.edc.identityhub.seed;
 import org.eclipse.edc.identityhub.spi.authentication.ServicePrincipal;
 import org.eclipse.edc.identityhub.spi.participantcontext.ParticipantContextService;
 import org.eclipse.edc.identityhub.spi.participantcontext.model.KeyDescriptor;
+import org.eclipse.edc.identityhub.spi.participantcontext.model.ParticipantContext;
 import org.eclipse.edc.identityhub.spi.participantcontext.model.ParticipantManifest;
 import org.eclipse.edc.runtime.metamodel.annotation.Inject;
 import org.eclipse.edc.runtime.metamodel.annotation.Setting;
@@ -67,13 +68,17 @@ public class ParticipantContextSeedExtension implements ServiceExtension {
                         .roles(List.of(ServicePrincipal.ROLE_ADMIN))
                         .build())
                 .onSuccess(generatedKey -> {
+                    // Explicitly activate the super-user, since DID publish for did:web:super-user will fail
+                    participantContextService.updateParticipant(superUserParticipantId, ParticipantContext::activate)
+                            .onSuccess(v -> monitor.debug("Super-user participant context activated"))
+                            .onFailure(f -> monitor.warning("Failed to activate super-user: %s".formatted(f.getFailureDetail())));
                     var apiKey = ofNullable(superUserApiKey)
                             .map(key -> {
                                 if (!key.contains(".")) {
                                     monitor.warning("Super-user key override: this key appears to have an invalid format. It must follow the structure: 'base64(<participantId>).<random-string>'");
                                 }
                                 participantContextService.getParticipantContext(superUserParticipantId)
-                                        .onSuccess(pc -> vault.storeSecret(pc.getApiTokenAlias(), key)
+                                        .onSuccess(pc -> vault.storeSecret(pc.getParticipantContextId(), pc.getApiTokenAlias(), key)
                                                 .onSuccess(u -> monitor.debug("Super-user key override successful"))
                                                 .onFailure(f -> monitor.warning("Error storing API key in vault: %s".formatted(f.getFailureDetail()))))
                                         .onFailure(f -> monitor.warning("Error overriding API key for '%s': %s".formatted(superUserParticipantId, f.getFailureDetail())));
