@@ -80,6 +80,29 @@ docker compose down
 ```
 
 
+## HashiCorp Vault
+
+All runtimes use [HashiCorp Vault](https://www.vaultproject.io/) for secret management, replacing EDC's default in-memory vault.
+
+### Docker Compose
+
+Vault runs in dev mode and starts automatically alongside the other services. The dev root token is `root-token` and the UI is accessible at `http://localhost:8200`.
+
+### Local / Native Runs
+
+When running runtimes directly with `java -jar`, you need a local Vault instance:
+
+```bash
+# Install Vault (if not already installed)
+# Ubuntu/Debian: sudo apt install vault
+# macOS: brew install vault
+
+# Start Vault in dev mode
+vault server -dev -dev-root-token-id=root-token
+```
+
+Vault must be running before starting the EDC runtimes. The config files point to `http://localhost:8200` with token `root-token`.
+
 ## PostgreSQL Persistence
 
 All runtimes use PostgreSQL for persistent storage. With `edc.sql.schema.autocreate=true`, EDC's built-in `SqlSchemaBootstrapper` automatically creates all required tables on startup.
@@ -89,7 +112,7 @@ All runtimes use PostgreSQL for persistent storage. With `edc.sql.schema.autocre
 PostgreSQL is included in the Docker Compose setup and starts automatically. No manual database setup is needed.
 
 ```bash
-docker compose up       # starts PostgreSQL + all EDC runtimes
+docker compose up       # starts Vault, PostgreSQL + all EDC runtimes
 docker compose down     # stops services, data is preserved in the postgres-data volume
 docker compose down -v  # stops services and deletes the database volume (clean reset)
 ```
@@ -370,7 +393,7 @@ Provides three capabilities missing from the base `dataplane-base-bom`:
 
 1. **Public endpoint generator** - Registers an `HttpData` endpoint generator function so the data plane can issue EDR tokens with a valid public endpoint URL
 2. **Public API servlet** - Registers a JAX-RS controller on the `public` web context (port 38185) to serve data transfer requests
-3. **Key loading** - Loads PEM signing keys from files into the in-memory vault at startup
+3. **Key loading** - Loads PEM signing keys from files into the vault at startup
 
 ## Adding a New Extension
 
