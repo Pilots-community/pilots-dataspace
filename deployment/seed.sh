@@ -167,29 +167,56 @@ echo "=== Storing STS Client Secrets ==="
 # The secret was auto-generated during participant context creation and returned in the response.
 # We store it in the connector vault so the connector can use it for STS token requests.
 
-# Store the STS client secret in the provider connector vault via Secrets API
-echo "Storing STS client secret in provider connector..."
-curl -s -X POST "${PROVIDER_MGMT}/v3/secrets" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: password" \
-  -d "{
-    \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-    \"@type\": \"Secret\",
-    \"@id\": \"${PROVIDER_DID}-sts-client-secret\",
-    \"value\": \"${PROVIDER_CLIENT_SECRET}\"
-  }" && echo " OK" || echo " FAILED"
+# Helper: store or update a secret in a connector vault (idempotent)
+store_or_update_secret() {
+  local MGMT_URL="$1"
+  local SECRET_ID="$2"
+  local SECRET_VALUE="$3"
 
-# Store the STS client secret in the consumer connector vault via Secrets API
+  local RESPONSE
+  RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${MGMT_URL}/v3/secrets" \
+    -H "Content-Type: application/json" \
+    -H "x-api-key: password" \
+    -d "{
+      \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+      \"@type\": \"Secret\",
+      \"@id\": \"${SECRET_ID}\",
+      \"value\": \"${SECRET_VALUE}\"
+    }")
+  local HTTP_CODE
+  HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+
+  if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+    echo " created"
+  elif [ "$HTTP_CODE" = "409" ]; then
+    # Secret already exists — update it with PUT
+    RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT "${MGMT_URL}/v3/secrets" \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: password" \
+      -d "{
+        \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+        \"@type\": \"Secret\",
+        \"@id\": \"${SECRET_ID}\",
+        \"value\": \"${SECRET_VALUE}\"
+      }")
+    HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+      echo " updated (was stale)"
+    else
+      echo " FAILED to update (HTTP ${HTTP_CODE}): $(echo "$RESPONSE" | head -n -1)"
+    fi
+  else
+    echo " FAILED (HTTP ${HTTP_CODE}): $(echo "$RESPONSE" | head -n -1)"
+  fi
+}
+
+# Store the STS client secret in the provider connector vault
+echo "Storing STS client secret in provider connector..."
+store_or_update_secret "${PROVIDER_MGMT}" "${PROVIDER_DID}-sts-client-secret" "${PROVIDER_CLIENT_SECRET}"
+
+# Store the STS client secret in the consumer connector vault
 echo "Storing STS client secret in consumer connector..."
-curl -s -X POST "${CONSUMER_MGMT}/v3/secrets" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: password" \
-  -d "{
-    \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-    \"@type\": \"Secret\",
-    \"@id\": \"${CONSUMER_DID}-sts-client-secret\",
-    \"value\": \"${CONSUMER_CLIENT_SECRET}\"
-  }" && echo " OK" || echo " FAILED"
+store_or_update_secret "${CONSUMER_MGMT}" "${CONSUMER_DID}-sts-client-secret" "${CONSUMER_CLIENT_SECRET}"
 
 echo ""
 echo "=== Storing Membership Credentials ==="

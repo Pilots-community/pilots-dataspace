@@ -182,7 +182,25 @@ curl http://localhost:38181/api/check/health
 > **Provider** = the connector that owns the data (management API on port **19193**)
 > **Consumer** = the connector requesting access (management API on port **29193**)
 
-Steps 1-3 set up data on the provider. Steps 4-7 run on the consumer side to discover, negotiate, and fetch that data. The `counterPartyAddress` in request bodies tells one EDC runtime how to reach another — use `localhost` when running natively, or Docker service names when running with Docker Compose.
+Steps 1-3 set up data on the provider. Steps 4-7 run on the consumer side to discover, negotiate, and fetch that data.
+
+### Environment Variables
+
+Set these once before running the steps below. The values differ between native and Docker Compose because the `counterPartyAddress` uses Docker service names for container-to-container communication, and the `counterPartyId` / provider DID depends on the IdentityHub hostname.
+
+**Native:**
+
+```bash
+PROVIDER_DSP="http://localhost:19194/protocol"
+PROVIDER_DID="did:web:localhost%3A7093"
+```
+
+**Docker Compose:**
+
+```bash
+PROVIDER_DSP="http://provider-controlplane:19194/protocol"
+PROVIDER_DID="did:web:provider-identityhub%3A7093"
+```
 
 ### 1. Create an Asset on the Provider
 
@@ -250,140 +268,108 @@ curl -X POST http://localhost:19193/management/v3/contractdefinitions \
 
 ### 4. Request the Catalog (from Consumer)
 
-Ask the consumer to fetch the provider's catalog. The `counterPartyAddress` tells the consumer runtime where to find the provider's DSP protocol endpoint.
-
-**Native:**
+Ask the consumer to fetch the provider's catalog. `counterPartyAddress` tells the consumer where to find the provider's DSP endpoint. `counterPartyId` must be the provider's DID — this is required for DCP authentication (the consumer uses it as the JWT audience when requesting an STS token).
 
 ```bash
-curl -X POST http://localhost:29193/management/v3/catalog/request \
+curl -s -X POST http://localhost:29193/management/v3/catalog/request \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: password" \
-  -d '{
-    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
-    "counterPartyAddress": "http://localhost:19194/protocol",
-    "protocol": "dataspace-protocol-http"
-  }'
+  -d "{
+    \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+    \"counterPartyAddress\": \"${PROVIDER_DSP}\",
+    \"counterPartyId\": \"${PROVIDER_DID}\",
+    \"protocol\": \"dataspace-protocol-http\"
+  }" | jq .
 ```
 
-**Docker Compose:**
+In the response, find the `dcat:dataset` entry for `sample-asset-1`. Inside it, `odrl:hasPolicy` contains the offer. Extract the **offer ID** (the `@id` of that policy) — you need it for the next step:
 
 ```bash
-curl -X POST http://localhost:29193/management/v3/catalog/request \
+OFFER_ID=$(curl -s -X POST http://localhost:29193/management/v3/catalog/request \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: password" \
-  -d '{
-    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
-    "counterPartyAddress": "http://provider-controlplane:19194/protocol",
-    "protocol": "dataspace-protocol-http"
-  }'
+  -d "{
+    \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+    \"counterPartyAddress\": \"${PROVIDER_DSP}\",
+    \"counterPartyId\": \"${PROVIDER_DID}\",
+    \"protocol\": \"dataspace-protocol-http\"
+  }" | jq -r '.["dcat:dataset"]["odrl:hasPolicy"]["@id"]')
+
+echo "$OFFER_ID"
 ```
 
-In the response, find the `dcat:dataset` entry for `sample-asset-1`. Inside it, `odrl:hasPolicy` contains the offer. Copy the `@id` of that policy — this is the **offer ID** you need for the next step. It looks like a Base64-encoded string, e.g.:
-
-```
-c2FtcGxlLWNvbnRyYWN0LWRlZg==:c2FtcGxlLWFzc2V0LTE=:MjdlNDFh...
-```
+It looks like a Base64-encoded string, e.g. `c2FtcGxlLWNvbnRyYWN0LWRlZg==:c2FtcGxlLWFzc2V0LTE=:MjdlNDFh...`
 
 ### 5. Negotiate a Contract
 
-Start a contract negotiation on the consumer side. Replace `<OFFER_ID>` with the offer ID from step 4.
-
-**Native:**
+Start a contract negotiation on the consumer side using the offer ID from step 4. The `assigner` must be the provider's DID.
 
 ```bash
-curl -X POST http://localhost:29193/management/v3/contractnegotiations \
+NEGOTIATION_ID=$(curl -s -X POST http://localhost:29193/management/v3/contractnegotiations \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: password" \
-  -d '{
-    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
-    "counterPartyAddress": "http://localhost:19194/protocol",
-    "protocol": "dataspace-protocol-http",
-    "policy": {
-      "@context": "http://www.w3.org/ns/odrl.jsonld",
-      "@id": "<OFFER_ID>",
-      "@type": "Offer",
-      "assigner": "did:web:provider-identityhub%3A7083",
-      "target": "sample-asset-1",
-      "permission": [],
-      "prohibition": [],
-      "obligation": []
+  -d "{
+    \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+    \"counterPartyAddress\": \"${PROVIDER_DSP}\",
+    \"counterPartyId\": \"${PROVIDER_DID}\",
+    \"protocol\": \"dataspace-protocol-http\",
+    \"policy\": {
+      \"@context\": \"http://www.w3.org/ns/odrl.jsonld\",
+      \"@id\": \"${OFFER_ID}\",
+      \"@type\": \"Offer\",
+      \"assigner\": \"${PROVIDER_DID}\",
+      \"target\": \"sample-asset-1\",
+      \"permission\": [],
+      \"prohibition\": [],
+      \"obligation\": []
     }
-  }'
+  }" | jq -r '.["@id"]')
+
+echo "$NEGOTIATION_ID"
 ```
 
-**Docker Compose:**
+Poll the negotiation status until `state` becomes `FINALIZED`:
 
 ```bash
-curl -X POST http://localhost:29193/management/v3/contractnegotiations \
-  -H "Content-Type: application/json" \
-  -H "X-Api-Key: password" \
-  -d '{
-    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
-    "counterPartyAddress": "http://provider-controlplane:19194/protocol",
-    "protocol": "dataspace-protocol-http",
-    "policy": {
-      "@context": "http://www.w3.org/ns/odrl.jsonld",
-      "@id": "<OFFER_ID>",
-      "@type": "Offer",
-      "assigner": "did:web:provider-identityhub%3A7083",
-      "target": "sample-asset-1",
-      "permission": [],
-      "prohibition": [],
-      "obligation": []
-    }
-  }'
+curl -s http://localhost:29193/management/v3/contractnegotiations/$NEGOTIATION_ID \
+  -H "X-Api-Key: password" | jq '{state, contractAgreementId}'
 ```
 
-The response returns a negotiation `@id`. Poll the negotiation status until `state` becomes `FINALIZED` (replace `<NEGOTIATION_ID>` with the returned `@id`):
+Once finalized, capture the `contractAgreementId`:
 
 ```bash
-curl http://localhost:29193/management/v3/contractnegotiations/<NEGOTIATION_ID> \
-  -H "X-Api-Key: password"
-```
+AGREEMENT_ID=$(curl -s http://localhost:29193/management/v3/contractnegotiations/$NEGOTIATION_ID \
+  -H "X-Api-Key: password" | jq -r '.contractAgreementId')
 
-Once finalized, copy the `contractAgreementId` from the response — you need it for the transfer.
+echo "$AGREEMENT_ID"
+```
 
 ### 6. Initiate a Data Transfer
 
-Request a data transfer on the consumer side. Replace `<AGREEMENT_ID>` with the contract agreement ID from step 5.
-
-**Native:**
+Request a data transfer on the consumer side using the contract agreement ID from step 5:
 
 ```bash
-curl -X POST http://localhost:29193/management/v3/transferprocesses \
+TRANSFER_ID=$(curl -s -X POST http://localhost:29193/management/v3/transferprocesses \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: password" \
-  -d '{
-    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
-    "counterPartyAddress": "http://localhost:19194/protocol",
-    "protocol": "dataspace-protocol-http",
-    "contractId": "<AGREEMENT_ID>",
-    "assetId": "sample-asset-1",
-    "transferType": "HttpData-PULL"
-  }'
+  -d "{
+    \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+    \"counterPartyAddress\": \"${PROVIDER_DSP}\",
+    \"counterPartyId\": \"${PROVIDER_DID}\",
+    \"protocol\": \"dataspace-protocol-http\",
+    \"contractId\": \"${AGREEMENT_ID}\",
+    \"assetId\": \"sample-asset-1\",
+    \"transferType\": \"HttpData-PULL\"
+  }" | jq -r '.["@id"]')
+
+echo "$TRANSFER_ID"
 ```
 
-**Docker Compose:**
+Poll the transfer status until `state` becomes `STARTED`:
 
 ```bash
-curl -X POST http://localhost:29193/management/v3/transferprocesses \
-  -H "Content-Type: application/json" \
-  -H "X-Api-Key: password" \
-  -d '{
-    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
-    "counterPartyAddress": "http://provider-controlplane:19194/protocol",
-    "protocol": "dataspace-protocol-http",
-    "contractId": "<AGREEMENT_ID>",
-    "assetId": "sample-asset-1",
-    "transferType": "HttpData-PULL"
-  }'
-```
-
-Poll the transfer status until `state` becomes `STARTED` (replace `<TRANSFER_ID>` with the returned `@id`):
-
-```bash
-curl http://localhost:29193/management/v3/transferprocesses/<TRANSFER_ID> \
-  -H "X-Api-Key: password"
+curl -s http://localhost:29193/management/v3/transferprocesses/$TRANSFER_ID \
+  -H "X-Api-Key: password" | jq '{state, type}'
 ```
 
 ### 7. Fetch Data via EDR
@@ -391,18 +377,21 @@ curl http://localhost:29193/management/v3/transferprocesses/<TRANSFER_ID> \
 Once the transfer is `STARTED`, retrieve the Endpoint Data Reference (EDR). This contains a short-lived access token for the data plane:
 
 ```bash
-curl http://localhost:29193/management/v3/edrs/<TRANSFER_ID>/dataaddress \
-  -H "X-Api-Key: password"
+curl -s http://localhost:29193/management/v3/edrs/$TRANSFER_ID/dataaddress \
+  -H "X-Api-Key: password" | jq .
 ```
 
-The response contains an `endpoint` URL and an `authorization` token. When running with Docker Compose, the `endpoint` will show the Docker service name (`http://provider-dataplane:38185/public`) — from your host terminal use `localhost` instead. Use the token to fetch the actual data through the provider's data plane:
+The response contains an `endpoint` URL and an `authorization` token. When running with Docker Compose, the `endpoint` shows the Docker service name (`http://provider-dataplane:38185/public`) — from your host terminal use `localhost` instead. Extract the token and fetch the actual data:
 
 ```bash
-curl http://localhost:38185/public \
-  -H "Authorization: Bearer <TOKEN>"
+TOKEN=$(curl -s http://localhost:29193/management/v3/edrs/$TRANSFER_ID/dataaddress \
+  -H "X-Api-Key: password" | jq -r '.authorization')
+
+curl -s http://localhost:38185/public \
+  -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
-This returns the data from the asset's backing data source (in this example, the JSON from `jsonplaceholder.typicode.com/todos/1`).
+A successful response confirms the full DCP-authenticated data transfer pipeline is working — token issuance, credential presentation, contract enforcement, and EDR validation all passed. The current `dataplane-public-endpoint` extension returns a confirmation message; a production data plane would proxy the request to the asset's backing data source.
 
 ## Custom Extensions
 
