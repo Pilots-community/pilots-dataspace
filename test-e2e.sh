@@ -30,11 +30,11 @@ FAILURES=()
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-assert() {
+assert_ok() {
   local description="$1"
-  local condition="$2"
+  local result="$2"  # 0 = pass, non-zero = fail
 
-  if eval "$condition"; then
+  if [ "$result" -eq 0 ]; then
     echo "  PASS: $description"
     PASSED=$((PASSED + 1))
   else
@@ -42,6 +42,17 @@ assert() {
     FAILED=$((FAILED + 1))
     FAILURES+=("$description")
   fi
+}
+
+http_is_ok() {
+  local code="$1"
+  shift
+  for allowed in "$@"; do
+    if [ "$code" = "$allowed" ]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 poll_state() {
@@ -85,7 +96,7 @@ ASSET_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${PROVIDER_MGMT}/v3
   }')
 
 echo "  HTTP $ASSET_HTTP"
-assert "Create asset returns 200 or 409" '[ "$ASSET_HTTP" = "200" ] || [ "$ASSET_HTTP" = "409" ]'
+http_is_ok "$ASSET_HTTP" "200" "409" && rc=0 || rc=1; assert_ok "Create asset returns 200 or 409" $rc
 
 # ── Step 2: Create Policy ───────────────────────────────────────────────────
 
@@ -111,7 +122,7 @@ POLICY_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${PROVIDER_MGMT}/v
   }')
 
 echo "  HTTP $POLICY_HTTP"
-assert "Create policy returns 200 or 409" '[ "$POLICY_HTTP" = "200" ] || [ "$POLICY_HTTP" = "409" ]'
+http_is_ok "$POLICY_HTTP" "200" "409" && rc=0 || rc=1; assert_ok "Create policy returns 200 or 409" $rc
 
 # ── Step 3: Create Contract Definition ──────────────────────────────────────
 
@@ -130,7 +141,7 @@ CONTRACTDEF_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${PROVIDER_MG
   }')
 
 echo "  HTTP $CONTRACTDEF_HTTP"
-assert "Create contract definition returns 200 or 409" '[ "$CONTRACTDEF_HTTP" = "200" ] || [ "$CONTRACTDEF_HTTP" = "409" ]'
+http_is_ok "$CONTRACTDEF_HTTP" "200" "409" && rc=0 || rc=1; assert_ok "Create contract definition returns 200 or 409" $rc
 
 # ── Step 4: Request Catalog ─────────────────────────────────────────────────
 
@@ -149,7 +160,7 @@ CATALOG_RESPONSE=$(curl -s -X POST "${CONSUMER_MGMT}/v3/catalog/request" \
 
 OFFER_ID=$(echo "$CATALOG_RESPONSE" | jq -r '.["dcat:dataset"]["odrl:hasPolicy"]["@id"] // empty')
 echo "  Offer ID: ${OFFER_ID:-<empty>}"
-assert "Catalog returns a non-empty offer ID" '[ -n "$OFFER_ID" ]'
+[ -n "$OFFER_ID" ] && rc=0 || rc=1; assert_ok "Catalog returns a non-empty offer ID" $rc
 
 # ── Step 5: Negotiate Contract ──────────────────────────────────────────────
 
@@ -183,10 +194,10 @@ if poll_state "${CONSUMER_MGMT}/v3/contractnegotiations/${NEGOTIATION_ID}" "FINA
   AGREEMENT_ID=$(curl -s "${CONSUMER_MGMT}/v3/contractnegotiations/${NEGOTIATION_ID}" \
     -H "X-Api-Key: $API_KEY" | jq -r '.contractAgreementId // empty')
   echo "  Agreement ID: ${AGREEMENT_ID:-<empty>}"
-  assert "Negotiation reaches FINALIZED with non-empty agreement ID" '[ -n "$AGREEMENT_ID" ]'
+  [ -n "$AGREEMENT_ID" ] && rc=0 || rc=1; assert_ok "Negotiation reaches FINALIZED with non-empty agreement ID" $rc
 else
   AGREEMENT_ID=""
-  assert "Negotiation reaches FINALIZED within ${POLL_TIMEOUT}s" 'false'
+  assert_ok "Negotiation reaches FINALIZED within ${POLL_TIMEOUT}s" 1
 fi
 
 # ── Step 6: Initiate Transfer ───────────────────────────────────────────────
@@ -216,9 +227,9 @@ else
   echo "  Polling for STARTED state..."
 
   if poll_state "${CONSUMER_MGMT}/v3/transferprocesses/${TRANSFER_ID}" "STARTED" "$POLL_TIMEOUT"; then
-    assert "Transfer reaches STARTED" 'true'
+    assert_ok "Transfer reaches STARTED" 0
   else
-    assert "Transfer reaches STARTED within ${POLL_TIMEOUT}s" 'false'
+    assert_ok "Transfer reaches STARTED within ${POLL_TIMEOUT}s" 1
   fi
 fi
 
@@ -237,7 +248,7 @@ else
 
   if [ -z "$TOKEN" ]; then
     echo "  Failed to retrieve EDR token"
-    assert "EDR token is non-empty" 'false'
+    assert_ok "EDR token is non-empty" 1
   else
     DATA_HTTP=$(curl -s -o /tmp/e2e-data-response.json -w "%{http_code}" "$DATA_PLANE_PUBLIC" \
       -H "Authorization: Bearer $TOKEN")
@@ -248,8 +259,8 @@ else
       DATA_VALID_JSON=true
     fi
 
-    assert "Data plane returns HTTP 200" '[ "$DATA_HTTP" = "200" ]'
-    assert "Data plane response is valid JSON" '[ "$DATA_VALID_JSON" = "true" ]'
+    [ "$DATA_HTTP" = "200" ] && rc=0 || rc=1; assert_ok "Data plane returns HTTP 200" $rc
+    [ "$DATA_VALID_JSON" = "true" ] && rc=0 || rc=1; assert_ok "Data plane response is valid JSON" $rc
   fi
 fi
 

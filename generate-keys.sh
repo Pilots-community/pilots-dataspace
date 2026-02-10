@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Find a python3 with the cryptography library
 PYTHON=python3
-if ! $PYTHON -c "from cryptography.hazmat.primitives import serialization" 2>/dev/null; then
+if ! "$PYTHON" -c "from cryptography.hazmat.primitives import serialization" 2>/dev/null; then
   if /usr/bin/python3 -c "from cryptography.hazmat.primitives import serialization" 2>/dev/null; then
     PYTHON=/usr/bin/python3
   else
@@ -58,7 +58,7 @@ fi
 echo ""
 echo "=== Updating Issuer DID Document ==="
 
-$PYTHON -c "
+"$PYTHON" -c "
 from cryptography.hazmat.primitives import serialization
 import base64, json, sys
 
@@ -116,7 +116,7 @@ generate_vc_file() {
 
   mkdir -p "$(dirname "$OUTPUT")"
 
-  $PYTHON -c "
+  "$PYTHON" -c "
 import json, base64, time, sys
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
