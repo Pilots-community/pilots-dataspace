@@ -63,6 +63,7 @@ This project uses the **Decentralized Claims Protocol (DCP)** for identity, repl
 | Provider Control Plane | `config/controlplane.properties` | default: 18181, mgmt: 19193, DSP: 19194, control: 19192 |
 | Consumer Control Plane | `config/controlplane-consumer.properties` | default: 28181, mgmt: 29193, DSP: 29194, control: 29192 |
 | Provider Data Plane | `config/dataplane.properties` | default: 38181, control: 38182, public: 38185 |
+| Consumer Data Plane | `config/dataplane-consumer.properties` | default: 48181, control: 48182, public: 48185 |
 | Provider IdentityHub | `config/identityhub-provider.properties` | base: 7090, creds: 7091, identity: 7092, DID: 7093, version: 7095, STS: 7096 |
 | Consumer IdentityHub | `config/identityhub-consumer.properties` | base: 7080, creds: 7081, identity: 7082, DID: 7083, version: 7085, STS: 7086 |
 | DID Server (NGINX) | — | 9876 |
@@ -94,6 +95,10 @@ java -Dedc.fs.config=config/controlplane-consumer.properties \
 
 # Terminal 3: Provider Data Plane
 java -Dedc.fs.config=config/dataplane.properties \
+     -jar runtimes/dataplane/build/libs/dataplane.jar
+
+# Terminal 4: Consumer Data Plane
+java -Dedc.fs.config=config/dataplane-consumer.properties \
      -jar runtimes/dataplane/build/libs/dataplane.jar
 ```
 
@@ -182,6 +187,7 @@ CREATE USER edc WITH PASSWORD 'edc';
 CREATE DATABASE provider_controlplane OWNER edc;
 CREATE DATABASE consumer_controlplane OWNER edc;
 CREATE DATABASE provider_dataplane OWNER edc;
+CREATE DATABASE consumer_dataplane OWNER edc;
 SQL
 ```
 
