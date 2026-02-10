@@ -122,7 +122,7 @@ On macOS/Windows with Docker Desktop, use `host.docker.internal` instead.
 
 ## End-to-End Example
 
-In this example, Machine A is the **provider** (owns the data) and Machine B is the **consumer** (requests data). Replace `<HOST>` with Machine A's `MY_PUBLIC_HOST` value and `<PROVIDER_DID>` with `did:web:<HOST>%3A7093`.
+In this example, Machine A is the **provider** (owns the data) and Machine B is the **consumer** (requests data). Replace `<HOST>` with Machine A's `MY_PUBLIC_HOST` value, `<PROVIDER_DID>` with `did:web:<HOST>%3A7093`, and `<CONSUMER_HOST>` with Machine B's `MY_PUBLIC_HOST` value.
 
 ### On Machine A: Set Up the Data (Steps 1-3)
 
@@ -168,7 +168,7 @@ curl -X POST http://localhost:19193/management/v3/contractdefinitions \
   }'
 ```
 
-### On Machine B: Discover, Negotiate, and Fetch (Steps 4-7)
+### On Machine B: Discover, Negotiate, and Fetch (Steps 4-8)
 
 #### 4. Request the Catalog from Machine A
 
@@ -263,6 +263,170 @@ Expected response (the sample asset proxies jsonplaceholder):
 
 ```json
 {"userId":1,"id":1,"title":"delectus aut autem","completed":false}
+```
+
+#### 8. Push Transfer (HttpData-PUSH)
+
+Instead of the consumer pulling data via an EDR token, the provider data plane can **push** data directly to an HTTP endpoint. The `http-receiver` service provides a simple endpoint for testing this.
+
+Reuse the same contract agreement from step 5. Specify `HttpData-PUSH` as the transfer type and a `dataDestination` with the receiver URL:
+
+```bash
+curl -X POST http://localhost:29193/management/v3/transferprocesses \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: password" \
+  -d '{
+    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
+    "counterPartyAddress": "http://<HOST>:19194/protocol",
+    "counterPartyId": "<PROVIDER_DID>",
+    "protocol": "dataspace-protocol-http",
+    "contractId": "<AGREEMENT_ID>",
+    "assetId": "sample-asset-1",
+    "transferType": "HttpData-PUSH",
+    "dataDestination": {
+      "type": "HttpData",
+      "baseUrl": "http://<CONSUMER_HOST>:4000/"
+    }
+  }'
+```
+
+Unlike pull transfers which stay in `STARTED`, push transfers reach `COMPLETED` once the data has been delivered:
+
+```bash
+curl http://localhost:29193/management/v3/transferprocesses/<TRANSFER_ID> \
+  -H "x-api-key: password"
+```
+
+Once completed, verify the data arrived at the receiver:
+
+```bash
+curl http://localhost:4000/
+```
+
+### Reverse Direction (Steps 9-11)
+
+The previous steps tested the forward direction (Machine A owns data, Machine B requests it). The following steps test the reverse — Machine B owns data, Machine A requests it — proving bidirectional data sharing works.
+
+Replace `<CONSUMER_HOST>` with Machine B's `MY_PUBLIC_HOST` and `<CONSUMER_DID>` with `did:web:<CONSUMER_HOST>%3A7083`.
+
+#### 9. On Machine B: Create Asset, Policy, and Contract
+
+Create an asset, policy, and contract definition on the **consumer** management API:
+
+```bash
+curl -X POST http://localhost:29193/management/v3/assets \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: password" \
+  -d '{
+    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
+    "@id": "reverse-asset-1",
+    "properties": { "name": "Consumer Data Asset", "contenttype": "application/json" },
+    "dataAddress": { "type": "HttpData", "baseUrl": "https://jsonplaceholder.typicode.com/todos/2" }
+  }'
+
+curl -X POST http://localhost:29193/management/v3/policydefinitions \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: password" \
+  -d '{
+    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/", "odrl": "http://www.w3.org/ns/odrl/2/" },
+    "@id": "reverse-open-policy",
+    "policy": { "@type": "odrl:Set", "odrl:permission": [], "odrl:prohibition": [], "odrl:obligation": [] }
+  }'
+
+curl -X POST http://localhost:29193/management/v3/contractdefinitions \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: password" \
+  -d '{
+    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
+    "@id": "reverse-contract-def",
+    "accessPolicyId": "reverse-open-policy",
+    "contractPolicyId": "reverse-open-policy",
+    "assetsSelector": []
+  }'
+```
+
+#### 10. On Machine A: Request Consumer's Catalog and Negotiate
+
+The **provider** fetches the consumer's catalog. Note the roles are swapped — `counterPartyAddress` points to the consumer's DSP endpoint and `counterPartyId` is the consumer's DID:
+
+```bash
+curl -X POST http://localhost:19193/management/v3/catalog/request \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: password" \
+  -d '{
+    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
+    "@type": "CatalogRequest",
+    "counterPartyAddress": "http://<CONSUMER_HOST>:29194/protocol",
+    "counterPartyId": "<CONSUMER_DID>",
+    "protocol": "dataspace-protocol-http"
+  }'
+```
+
+Find `reverse-asset-1` in the response and copy its offer ID. Negotiate using the **provider** management API (port 19193). The `assigner` is the consumer's DID:
+
+```bash
+curl -X POST http://localhost:19193/management/v3/contractnegotiations \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: password" \
+  -d '{
+    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/", "odrl": "http://www.w3.org/ns/odrl/2/" },
+    "@type": "ContractRequest",
+    "counterPartyAddress": "http://<CONSUMER_HOST>:29194/protocol",
+    "counterPartyId": "<CONSUMER_DID>",
+    "protocol": "dataspace-protocol-http",
+    "policy": {
+      "@type": "odrl:Offer",
+      "@id": "<OFFER_ID>",
+      "odrl:target": { "@id": "reverse-asset-1" },
+      "odrl:assigner": { "@id": "<CONSUMER_DID>" },
+      "odrl:permission": [], "odrl:prohibition": [], "odrl:obligation": []
+    }
+  }'
+```
+
+Poll until `FINALIZED`:
+
+```bash
+curl http://localhost:19193/management/v3/contractnegotiations/<NEGOTIATION_ID> \
+  -H "x-api-key: password"
+```
+
+Copy the `contractAgreementId` from the response.
+
+#### 11. On Machine A: Pull Data via Consumer Data Plane
+
+Initiate a pull transfer from the **provider** side:
+
+```bash
+curl -X POST http://localhost:19193/management/v3/transferprocesses \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: password" \
+  -d '{
+    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
+    "counterPartyAddress": "http://<CONSUMER_HOST>:29194/protocol",
+    "protocol": "dataspace-protocol-http",
+    "contractId": "<AGREEMENT_ID>",
+    "assetId": "reverse-asset-1",
+    "transferType": "HttpData-PULL"
+  }'
+```
+
+Poll until `STARTED`, then retrieve the EDR and fetch data. The endpoint will use the **consumer data plane** (port 48185 on Machine B):
+
+```bash
+curl http://localhost:19193/management/v3/edrs/<TRANSFER_ID>/dataaddress \
+  -H "x-api-key: password"
+```
+
+```bash
+curl <ENDPOINT_URL> \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+Expected response (confirms bidirectional data sharing works):
+
+```json
+{"userId":1,"id":2,"title":"quis ut nam facilis et officia qui","completed":false}
 ```
 
 ## Distributing Docker Images
