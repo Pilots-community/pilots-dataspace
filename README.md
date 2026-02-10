@@ -10,6 +10,8 @@ A downstream project based on [Eclipse Dataspace Components (EDC)](https://githu
 - `jq` and `curl` (for running the seed script)
 - Python 3 with the `cryptography` library (`pip install cryptography`)
 
+> **Windows users:** The setup scripts and tooling require a bash shell. Use [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) (recommended) or Git Bash.
+
 ## Quick Start
 
 Run a single command to generate keys, build images, start all services, and seed identity data:
