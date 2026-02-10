@@ -3,25 +3,30 @@ package org.eclipse.edc.extension;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.eclipse.edc.connector.dataplane.spi.store.AccessTokenDataStore;
+import org.eclipse.edc.connector.dataplane.spi.iam.DataPlaneAuthorizationService;
 import org.eclipse.edc.spi.monitor.Monitor;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.Map;
 
 @Path("/")
 public class DataPlanePublicApiController {
 
-    private final AccessTokenDataStore accessTokenDataStore;
+    private final DataPlaneAuthorizationService authorizationService;
     private final Monitor monitor;
+    private final HttpClient httpClient;
 
-    public DataPlanePublicApiController(AccessTokenDataStore accessTokenDataStore, Monitor monitor) {
-        this.accessTokenDataStore = accessTokenDataStore;
+    public DataPlanePublicApiController(DataPlaneAuthorizationService authorizationService, Monitor monitor) {
+        this.authorizationService = authorizationService;
         this.monitor = monitor;
+        this.httpClient = HttpClient.newHttpClient();
     }
 
     @GET
-    @Produces(MediaType.APPLICATION_JSON)
     public Response getData(@HeaderParam("Authorization") String authorization) {
         if (authorization == null || !authorization.toLowerCase().startsWith("bearer ")) {
             return Response.status(Response.Status.UNAUTHORIZED)
@@ -30,35 +35,49 @@ public class DataPlanePublicApiController {
         }
 
         var token = authorization.substring(7);
-        var jti = extractJti(token);
 
-        var tokenData = accessTokenDataStore.getById(jti);
-        if (tokenData == null) {
-            monitor.warning("No access token data found for JTI: " + jti);
+        // Authorize the token and get the source DataAddress
+        var requestData = Map.<String, Object>of("method", "GET");
+        var result = authorizationService.authorize(token, requestData);
+
+        if (result.failed()) {
+            monitor.warning("Public API: authorization failed: " + result.getFailureDetail());
             return Response.status(Response.Status.FORBIDDEN)
-                    .entity("{\"error\": \"Invalid or expired token\"}")
+                    .entity("{\"error\": \"" + result.getFailureDetail() + "\"}")
                     .build();
         }
 
-        monitor.info("Public API: valid token for JTI " + jti);
-        return Response.ok("{\"message\": \"Data transfer successful via EDC data plane\", \"jti\": \"" + jti + "\"}").build();
-    }
+        var dataAddress = result.getContent();
+        var baseUrl = dataAddress.getStringProperty("baseUrl");
 
-    private String extractJti(String token) {
-        try {
-            var parts = token.split("\\.");
-            if (parts.length >= 2) {
-                var payload = new String(java.util.Base64.getUrlDecoder().decode(parts[1]));
-                var idx = payload.indexOf("\"jti\"");
-                if (idx >= 0) {
-                    var start = payload.indexOf("\"", idx + 5) + 1;
-                    var end = payload.indexOf("\"", start);
-                    return payload.substring(start, end);
-                }
-            }
-        } catch (Exception e) {
-            monitor.warning("Failed to extract JTI from token: " + e.getMessage());
+        if (baseUrl == null || baseUrl.isBlank()) {
+            monitor.warning("Public API: no baseUrl in DataAddress");
+            return Response.status(Response.Status.BAD_GATEWAY)
+                    .entity("{\"error\": \"No source URL configured for this data address\"}")
+                    .build();
         }
-        return "";
+
+        monitor.info("Public API: proxying request to " + baseUrl);
+
+        // Fetch from the actual data source
+        try {
+            var request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl))
+                    .GET()
+                    .build();
+
+            var response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            var contentType = response.headers().firstValue("Content-Type").orElse("application/octet-stream");
+
+            return Response.status(response.statusCode())
+                    .entity(response.body())
+                    .header("Content-Type", contentType)
+                    .build();
+        } catch (Exception e) {
+            monitor.warning("Public API: failed to fetch from source: " + e.getMessage());
+            return Response.status(Response.Status.BAD_GATEWAY)
+                    .entity("{\"error\": \"Failed to fetch from data source: " + e.getMessage() + "\"}")
+                    .build();
+        }
     }
 }

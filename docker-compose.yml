@@ -191,5 +191,19 @@ services:
       timeout: 5s
       retries: 10
 
+  http-receiver:
+    image: python:3-alpine
+    container_name: http-receiver
+    command: python /app/server.py
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./deployment/http-receiver/server.py:/app/server.py:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres-data:
