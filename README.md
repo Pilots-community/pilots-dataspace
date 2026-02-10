@@ -8,6 +8,19 @@ A downstream project based on [Eclipse Dataspace Components (EDC)](https://githu
 - Gradle (wrapper included)
 - Docker and Docker Compose (for containerized deployment)
 - `jq` and `curl` (for running the seed script)
+- Python 3 with the `cryptography` library (`pip install cryptography`)
+
+## Quick Start
+
+Run a single command to generate keys, build images, start all services, and seed identity data:
+
+```bash
+./setup.sh
+```
+
+Use `./setup.sh --clean` to wipe volumes (database, vault) and start fresh.
+
+Once the script completes, follow the [End-to-End Example](#end-to-end-example-catalog-negotiate-transfer) to create an asset, negotiate a contract, and transfer data.
 
 ## Build
 
