@@ -18,7 +18,13 @@ Run a single command to generate keys, build images, start all services, and see
 ./setup.sh
 ```
 
-Use `./setup.sh --clean` to wipe volumes (database, vault) and start fresh.
+To restart services without rebuilding (e.g. after a reboot or `docker compose down`):
+
+```bash
+./start.sh
+```
+
+Both scripts support `--clean` to wipe volumes (database, vault) and start fresh.
 
 Once the script completes, follow the [End-to-End Example](#end-to-end-example-catalog-negotiate-transfer) to create an asset, negotiate a contract, and transfer data.
 
