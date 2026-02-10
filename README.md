@@ -215,7 +215,7 @@ curl http://localhost:38181/api/check/health
 > **Provider** = the connector that owns the data (management API on port **19193**)
 > **Consumer** = the connector requesting access (management API on port **29193**)
 
-Steps 1-3 set up data on the provider. Steps 4-7 run a pull transfer (consumer fetches data via EDR). Steps 8-10 run a push transfer (provider pushes data to an HTTP endpoint).
+Steps 1-3 set up data on the provider. Steps 4-7 run a pull transfer (consumer fetches data via EDR). Steps 8-10 run a push transfer (provider pushes data to an HTTP endpoint). Steps 11-14 test the **reverse direction** — the consumer owns data and the provider requests it — proving bidirectional data sharing works.
 
 ### Environment Variables
 
@@ -226,6 +226,8 @@ Set these once before running the steps below. The values differ between native 
 ```bash
 PROVIDER_DSP="http://localhost:19194/protocol"
 PROVIDER_DID="did:web:localhost%3A7093"
+CONSUMER_DSP="http://localhost:29194/protocol"
+CONSUMER_DID="did:web:localhost%3A7083"
 ```
 
 **Docker Compose:**
@@ -233,6 +235,8 @@ PROVIDER_DID="did:web:localhost%3A7093"
 ```bash
 PROVIDER_DSP="http://provider-controlplane:19194/protocol"
 PROVIDER_DID="did:web:provider-identityhub%3A7093"
+CONSUMER_DSP="http://consumer-controlplane:29194/protocol"
+CONSUMER_DID="did:web:consumer-identityhub%3A7083"
 ```
 
 ### 1. Create an Asset on the Provider
@@ -465,6 +469,145 @@ Once completed, verify the data arrived at the receiver:
 ```bash
 curl -s http://localhost:4000/ | jq .
 ```
+
+### 9. Reverse Direction: Create Asset, Policy, and Contract on the Consumer
+
+The previous steps tested the forward direction (provider owns data, consumer requests it). To test the reverse — consumer owns data, provider requests it — create an asset, policy, and contract definition on the **consumer** management API (port 29193):
+
+```bash
+curl -X POST http://localhost:29193/management/v3/assets \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: password" \
+  -d '{
+    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
+    "@id": "reverse-asset-1",
+    "properties": {
+      "name": "Consumer Data Asset",
+      "description": "A dataset owned by the consumer",
+      "contenttype": "application/json"
+    },
+    "dataAddress": {
+      "type": "HttpData",
+      "baseUrl": "https://jsonplaceholder.typicode.com/todos/2"
+    }
+  }'
+
+curl -X POST http://localhost:29193/management/v3/policydefinitions \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: password" \
+  -d '{
+    "@context": {
+      "@vocab": "https://w3id.org/edc/v0.0.1/ns/",
+      "odrl": "http://www.w3.org/ns/odrl/2/"
+    },
+    "@id": "reverse-open-policy",
+    "policy": {
+      "@context": "http://www.w3.org/ns/odrl.jsonld",
+      "@type": "Set",
+      "permission": [],
+      "prohibition": [],
+      "obligation": []
+    }
+  }'
+
+curl -X POST http://localhost:29193/management/v3/contractdefinitions \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: password" \
+  -d '{
+    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
+    "@id": "reverse-contract-def",
+    "accessPolicyId": "reverse-open-policy",
+    "contractPolicyId": "reverse-open-policy",
+    "assetsSelector": []
+  }'
+```
+
+### 10. Reverse: Provider Requests Consumer's Catalog and Negotiates
+
+Now the **provider** fetches the consumer's catalog and negotiates a contract. Note the roles are swapped — `counterPartyAddress` points to the consumer's DSP endpoint and `counterPartyId` is the consumer's DID:
+
+```bash
+REVERSE_OFFER_ID=$(curl -s -X POST http://localhost:19193/management/v3/catalog/request \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: password" \
+  -d "{
+    \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+    \"counterPartyAddress\": \"${CONSUMER_DSP}\",
+    \"counterPartyId\": \"${CONSUMER_DID}\",
+    \"protocol\": \"dataspace-protocol-http\"
+  }" | jq -r '.["dcat:dataset"] | if type == "array" then .[] else . end | select(.["@id"] == "reverse-asset-1") | .["odrl:hasPolicy"]["@id"]')
+
+echo "$REVERSE_OFFER_ID"
+```
+
+Negotiate using the provider management API. The `assigner` is the consumer's DID:
+
+```bash
+REVERSE_NEGOTIATION_ID=$(curl -s -X POST http://localhost:19193/management/v3/contractnegotiations \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: password" \
+  -d "{
+    \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+    \"counterPartyAddress\": \"${CONSUMER_DSP}\",
+    \"counterPartyId\": \"${CONSUMER_DID}\",
+    \"protocol\": \"dataspace-protocol-http\",
+    \"policy\": {
+      \"@context\": \"http://www.w3.org/ns/odrl.jsonld\",
+      \"@id\": \"${REVERSE_OFFER_ID}\",
+      \"@type\": \"Offer\",
+      \"assigner\": \"${CONSUMER_DID}\",
+      \"target\": \"reverse-asset-1\",
+      \"permission\": [],
+      \"prohibition\": [],
+      \"obligation\": []
+    }
+  }" | jq -r '.["@id"]')
+
+echo "$REVERSE_NEGOTIATION_ID"
+```
+
+Poll until `FINALIZED` and capture the agreement ID:
+
+```bash
+curl -s http://localhost:19193/management/v3/contractnegotiations/$REVERSE_NEGOTIATION_ID \
+  -H "X-Api-Key: password" | jq '{state, contractAgreementId}'
+
+REVERSE_AGREEMENT_ID=$(curl -s http://localhost:19193/management/v3/contractnegotiations/$REVERSE_NEGOTIATION_ID \
+  -H "X-Api-Key: password" | jq -r '.contractAgreementId')
+```
+
+### 11. Reverse: Provider Pulls Data and Fetches via EDR
+
+Initiate a pull transfer from the provider side:
+
+```bash
+REVERSE_TRANSFER_ID=$(curl -s -X POST http://localhost:19193/management/v3/transferprocesses \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: password" \
+  -d "{
+    \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+    \"counterPartyAddress\": \"${CONSUMER_DSP}\",
+    \"counterPartyId\": \"${CONSUMER_DID}\",
+    \"protocol\": \"dataspace-protocol-http\",
+    \"contractId\": \"${REVERSE_AGREEMENT_ID}\",
+    \"assetId\": \"reverse-asset-1\",
+    \"transferType\": \"HttpData-PULL\"
+  }" | jq -r '.["@id"]')
+
+echo "$REVERSE_TRANSFER_ID"
+```
+
+Poll until `STARTED`, then retrieve the EDR and fetch data from the **consumer data plane** (port 48185):
+
+```bash
+REVERSE_TOKEN=$(curl -s http://localhost:19193/management/v3/edrs/$REVERSE_TRANSFER_ID/dataaddress \
+  -H "X-Api-Key: password" | jq -r '.authorization')
+
+curl -s http://localhost:48185/public \
+  -H "Authorization: Bearer $REVERSE_TOKEN" | jq .
+```
+
+A successful response returns the JSON from `jsonplaceholder.typicode.com/todos/2`, confirming that bidirectional data sharing works — the consumer data plane can serve data just like the provider data plane.
 
 ## Custom Extensions
 
