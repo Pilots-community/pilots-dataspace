@@ -250,7 +250,7 @@ curl -X POST http://localhost:19193/management/v3/contractdefinitions \
 
 ### 4. Request the Catalog (from Consumer)
 
-Ask the consumer to fetch the provider's catalog. The `counterPartyAddress` tells the consumer runtime where to find the provider's DSP protocol endpoint.
+Ask the consumer to fetch the provider's catalog. The `counterPartyAddress` tells the consumer runtime where to find the provider's DSP protocol endpoint. The `counterPartyId` must be the provider's DID — this is required for DCP authentication (the consumer uses it as the JWT audience when requesting an STS token).
 
 **Native:**
 
@@ -261,6 +261,7 @@ curl -X POST http://localhost:29193/management/v3/catalog/request \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "counterPartyAddress": "http://localhost:19194/protocol",
+    "counterPartyId": "did:web:localhost%3A7093",
     "protocol": "dataspace-protocol-http"
   }'
 ```
@@ -274,6 +275,7 @@ curl -X POST http://localhost:29193/management/v3/catalog/request \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "counterPartyAddress": "http://provider-controlplane:19194/protocol",
+    "counterPartyId": "did:web:provider-identityhub%3A7093",
     "protocol": "dataspace-protocol-http"
   }'
 ```
@@ -297,12 +299,13 @@ curl -X POST http://localhost:29193/management/v3/contractnegotiations \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "counterPartyAddress": "http://localhost:19194/protocol",
+    "counterPartyId": "did:web:localhost%3A7093",
     "protocol": "dataspace-protocol-http",
     "policy": {
       "@context": "http://www.w3.org/ns/odrl.jsonld",
       "@id": "<OFFER_ID>",
       "@type": "Offer",
-      "assigner": "did:web:provider-identityhub%3A7083",
+      "assigner": "did:web:localhost%3A7093",
       "target": "sample-asset-1",
       "permission": [],
       "prohibition": [],
@@ -320,12 +323,13 @@ curl -X POST http://localhost:29193/management/v3/contractnegotiations \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "counterPartyAddress": "http://provider-controlplane:19194/protocol",
+    "counterPartyId": "did:web:provider-identityhub%3A7093",
     "protocol": "dataspace-protocol-http",
     "policy": {
       "@context": "http://www.w3.org/ns/odrl.jsonld",
       "@id": "<OFFER_ID>",
       "@type": "Offer",
-      "assigner": "did:web:provider-identityhub%3A7083",
+      "assigner": "did:web:provider-identityhub%3A7093",
       "target": "sample-asset-1",
       "permission": [],
       "prohibition": [],
@@ -356,6 +360,7 @@ curl -X POST http://localhost:29193/management/v3/transferprocesses \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "counterPartyAddress": "http://localhost:19194/protocol",
+    "counterPartyId": "did:web:localhost%3A7093",
     "protocol": "dataspace-protocol-http",
     "contractId": "<AGREEMENT_ID>",
     "assetId": "sample-asset-1",
@@ -372,6 +377,7 @@ curl -X POST http://localhost:29193/management/v3/transferprocesses \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "counterPartyAddress": "http://provider-controlplane:19194/protocol",
+    "counterPartyId": "did:web:provider-identityhub%3A7093",
     "protocol": "dataspace-protocol-http",
     "contractId": "<AGREEMENT_ID>",
     "assetId": "sample-asset-1",
