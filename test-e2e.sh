@@ -2,9 +2,11 @@
 set -euo pipefail
 
 # End-to-end test for the Pilots Dataspace.
-# Runs the full flow: create asset, create policy, create contract definition,
-# request catalog, negotiate contract, initiate transfer, fetch data via EDR,
-# then push transfer to an HTTP receiver.
+# Tests bidirectional data sharing:
+#   Steps 1-10:  Forward direction — provider owns data, consumer requests it
+#                (pull transfer via EDR + push transfer to HTTP receiver)
+#   Steps 11-17: Reverse direction — consumer owns data, provider requests it
+#                (pull transfer via EDR from consumer data plane)
 #
 # Prerequisites: All services must be running and seeded (./start.sh or ./setup.sh).
 #
@@ -22,6 +24,9 @@ API_KEY="password"
 # Docker Compose env vars (container-to-container addresses)
 PROVIDER_DSP="http://provider-controlplane:19194/protocol"
 PROVIDER_DID="did:web:provider-identityhub%3A7093"
+CONSUMER_DSP="http://consumer-controlplane:29194/protocol"
+CONSUMER_DID="did:web:consumer-identityhub%3A7083"
+CONSUMER_DATA_PLANE_PUBLIC="http://localhost:48185/public"
 
 POLL_INTERVAL=2
 POLL_TIMEOUT=30
@@ -351,6 +356,217 @@ else
     rc=1
   fi
   assert_ok "Pushed data contains real data (userId, id, title, completed)" $rc
+fi
+
+# ── Step 11: Create Asset on Consumer (reverse direction) ─────────────
+
+echo ""
+echo "=== Step 11: Create Asset on Consumer (reverse) ==="
+
+REVERSE_ASSET_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${CONSUMER_MGMT}/v3/assets" \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: $API_KEY" \
+  -d '{
+    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
+    "@id": "reverse-asset-1",
+    "properties": {
+      "name": "Consumer Data Asset",
+      "description": "A dataset owned by the consumer for reverse testing",
+      "contenttype": "application/json"
+    },
+    "dataAddress": {
+      "type": "HttpData",
+      "baseUrl": "https://jsonplaceholder.typicode.com/todos/2"
+    }
+  }')
+
+echo "  HTTP $REVERSE_ASSET_HTTP"
+http_is_ok "$REVERSE_ASSET_HTTP" "200" "409" && rc=0 || rc=1; assert_ok "Create reverse asset returns 200 or 409" $rc
+
+# ── Step 12: Create Policy on Consumer ────────────────────────────────
+
+echo ""
+echo "=== Step 12: Create Policy on Consumer (reverse) ==="
+
+REVERSE_POLICY_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${CONSUMER_MGMT}/v3/policydefinitions" \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: $API_KEY" \
+  -d '{
+    "@context": {
+      "@vocab": "https://w3id.org/edc/v0.0.1/ns/",
+      "odrl": "http://www.w3.org/ns/odrl/2/"
+    },
+    "@id": "reverse-open-policy",
+    "policy": {
+      "@context": "http://www.w3.org/ns/odrl.jsonld",
+      "@type": "Set",
+      "permission": [],
+      "prohibition": [],
+      "obligation": []
+    }
+  }')
+
+echo "  HTTP $REVERSE_POLICY_HTTP"
+http_is_ok "$REVERSE_POLICY_HTTP" "200" "409" && rc=0 || rc=1; assert_ok "Create reverse policy returns 200 or 409" $rc
+
+# ── Step 13: Create Contract Definition on Consumer ───────────────────
+
+echo ""
+echo "=== Step 13: Create Contract Definition on Consumer (reverse) ==="
+
+REVERSE_CONTRACTDEF_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${CONSUMER_MGMT}/v3/contractdefinitions" \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: $API_KEY" \
+  -d '{
+    "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
+    "@id": "reverse-contract-def",
+    "accessPolicyId": "reverse-open-policy",
+    "contractPolicyId": "reverse-open-policy",
+    "assetsSelector": []
+  }')
+
+echo "  HTTP $REVERSE_CONTRACTDEF_HTTP"
+http_is_ok "$REVERSE_CONTRACTDEF_HTTP" "200" "409" && rc=0 || rc=1; assert_ok "Create reverse contract definition returns 200 or 409" $rc
+
+# ── Step 14: Provider Requests Consumer's Catalog ─────────────────────
+
+echo ""
+echo "=== Step 14: Provider Requests Consumer's Catalog (reverse) ==="
+
+REVERSE_CATALOG_RESPONSE=$(curl -s -X POST "${PROVIDER_MGMT}/v3/catalog/request" \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: $API_KEY" \
+  -d "{
+    \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+    \"counterPartyAddress\": \"${CONSUMER_DSP}\",
+    \"counterPartyId\": \"${CONSUMER_DID}\",
+    \"protocol\": \"dataspace-protocol-http\"
+  }")
+
+REVERSE_OFFER_ID=$(echo "$REVERSE_CATALOG_RESPONSE" | jq -r '
+  .["dcat:dataset"]
+  | if type == "array" then .[] else . end
+  | select(.["@id"] == "reverse-asset-1")
+  | .["odrl:hasPolicy"]["@id"] // empty')
+echo "  Offer ID: ${REVERSE_OFFER_ID:-<empty>}"
+[ -n "$REVERSE_OFFER_ID" ] && rc=0 || rc=1; assert_ok "Reverse catalog returns a non-empty offer ID" $rc
+
+# ── Step 15: Provider Negotiates Contract with Consumer ───────────────
+
+echo ""
+echo "=== Step 15: Provider Negotiates Contract with Consumer (reverse) ==="
+
+if [ -z "${REVERSE_OFFER_ID:-}" ]; then
+  echo "  Skipped (no offer ID from step 14)"
+  FAILED=$((FAILED + 1))
+  FAILURES+=("Reverse negotiation skipped — no offer ID")
+  REVERSE_AGREEMENT_ID=""
+else
+  REVERSE_NEGOTIATION_ID=$(curl -s -X POST "${PROVIDER_MGMT}/v3/contractnegotiations" \
+    -H "Content-Type: application/json" \
+    -H "X-Api-Key: $API_KEY" \
+    -d "{
+      \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+      \"counterPartyAddress\": \"${CONSUMER_DSP}\",
+      \"counterPartyId\": \"${CONSUMER_DID}\",
+      \"protocol\": \"dataspace-protocol-http\",
+      \"policy\": {
+        \"@context\": \"http://www.w3.org/ns/odrl.jsonld\",
+        \"@id\": \"${REVERSE_OFFER_ID}\",
+        \"@type\": \"Offer\",
+        \"assigner\": \"${CONSUMER_DID}\",
+        \"target\": \"reverse-asset-1\",
+        \"permission\": [],
+        \"prohibition\": [],
+        \"obligation\": []
+      }
+    }" | jq -r '.["@id"]')
+
+  echo "  Negotiation ID: ${REVERSE_NEGOTIATION_ID}"
+  echo "  Polling for FINALIZED state..."
+
+  if poll_state "${PROVIDER_MGMT}/v3/contractnegotiations/${REVERSE_NEGOTIATION_ID}" "FINALIZED" "$POLL_TIMEOUT"; then
+    REVERSE_AGREEMENT_ID=$(curl -s "${PROVIDER_MGMT}/v3/contractnegotiations/${REVERSE_NEGOTIATION_ID}" \
+      -H "X-Api-Key: $API_KEY" | jq -r '.contractAgreementId // empty')
+    echo "  Agreement ID: ${REVERSE_AGREEMENT_ID:-<empty>}"
+    [ -n "$REVERSE_AGREEMENT_ID" ] && rc=0 || rc=1; assert_ok "Reverse negotiation reaches FINALIZED with non-empty agreement ID" $rc
+  else
+    REVERSE_AGREEMENT_ID=""
+    assert_ok "Reverse negotiation reaches FINALIZED within ${POLL_TIMEOUT}s" 1
+  fi
+fi
+
+# ── Step 16: Provider Initiates Pull Transfer from Consumer ───────────
+
+echo ""
+echo "=== Step 16: Provider Initiates Pull Transfer from Consumer (reverse) ==="
+
+if [ -z "${REVERSE_AGREEMENT_ID:-}" ]; then
+  echo "  Skipped (no agreement ID from step 15)"
+  FAILED=$((FAILED + 1))
+  FAILURES+=("Reverse transfer skipped — no agreement ID")
+  REVERSE_TRANSFER_ID=""
+else
+  REVERSE_TRANSFER_ID=$(curl -s -X POST "${PROVIDER_MGMT}/v3/transferprocesses" \
+    -H "Content-Type: application/json" \
+    -H "X-Api-Key: $API_KEY" \
+    -d "{
+      \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+      \"counterPartyAddress\": \"${CONSUMER_DSP}\",
+      \"counterPartyId\": \"${CONSUMER_DID}\",
+      \"protocol\": \"dataspace-protocol-http\",
+      \"contractId\": \"${REVERSE_AGREEMENT_ID}\",
+      \"assetId\": \"reverse-asset-1\",
+      \"transferType\": \"HttpData-PULL\"
+    }" | jq -r '.["@id"]')
+
+  echo "  Transfer ID: ${REVERSE_TRANSFER_ID}"
+  echo "  Polling for STARTED state..."
+
+  if poll_state "${PROVIDER_MGMT}/v3/transferprocesses/${REVERSE_TRANSFER_ID}" "STARTED" "$POLL_TIMEOUT"; then
+    assert_ok "Reverse transfer reaches STARTED" 0
+  else
+    assert_ok "Reverse transfer reaches STARTED within ${POLL_TIMEOUT}s" 1
+  fi
+fi
+
+# ── Step 17: Provider Fetches Data via EDR from Consumer DP ───────────
+
+echo ""
+echo "=== Step 17: Provider Fetches Data via EDR from Consumer DP (reverse) ==="
+
+if [ -z "${REVERSE_TRANSFER_ID:-}" ]; then
+  echo "  Skipped (no transfer ID from step 16)"
+  FAILED=$((FAILED + 1))
+  FAILURES+=("Reverse EDR fetch skipped — no transfer ID")
+else
+  REVERSE_TOKEN=$(curl -s "${PROVIDER_MGMT}/v3/edrs/${REVERSE_TRANSFER_ID}/dataaddress" \
+    -H "X-Api-Key: $API_KEY" | jq -r '.authorization // empty')
+
+  if [ -z "$REVERSE_TOKEN" ]; then
+    echo "  Failed to retrieve EDR token"
+    assert_ok "Reverse EDR token is non-empty" 1
+  else
+    REVERSE_DATA_HTTP=$(curl -s -o /tmp/e2e-reverse-data-response.json -w "%{http_code}" "$CONSUMER_DATA_PLANE_PUBLIC" \
+      -H "Authorization: Bearer $REVERSE_TOKEN")
+    echo "  HTTP $REVERSE_DATA_HTTP"
+
+    [ "$REVERSE_DATA_HTTP" = "200" ] && rc=0 || rc=1; assert_ok "Consumer data plane returns HTTP 200" $rc
+
+    # Verify the response contains actual jsonplaceholder data (todos/2)
+    HAS_USERID=$(jq 'has("userId")' /tmp/e2e-reverse-data-response.json 2>/dev/null || echo "false")
+    HAS_ID=$(jq 'has("id")' /tmp/e2e-reverse-data-response.json 2>/dev/null || echo "false")
+    HAS_TITLE=$(jq 'has("title")' /tmp/e2e-reverse-data-response.json 2>/dev/null || echo "false")
+    HAS_COMPLETED=$(jq 'has("completed")' /tmp/e2e-reverse-data-response.json 2>/dev/null || echo "false")
+
+    if [ "$HAS_USERID" = "true" ] && [ "$HAS_ID" = "true" ] && [ "$HAS_TITLE" = "true" ] && [ "$HAS_COMPLETED" = "true" ]; then
+      rc=0
+    else
+      echo "    Response: $(cat /tmp/e2e-reverse-data-response.json)"
+      rc=1
+    fi
+    assert_ok "Reverse response contains real data (userId, id, title, completed)" $rc
+  fi
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────

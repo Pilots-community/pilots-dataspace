@@ -34,7 +34,7 @@ Once the script completes, follow the [End-to-End Example](#end-to-end-example-c
 ./test-e2e.sh
 ```
 
-This script runs all 10 E2E steps (pull + push transfers) with assertions and exits with code 0 on success. CI runs it automatically on every push and PR to `main`.
+This script runs all 17 E2E steps with 20 assertions — forward direction (provider-to-consumer pull + push transfers) and reverse direction (consumer-to-provider pull transfer) — and exits with code 0 on success. CI runs it automatically on every push and PR to `main`.
 
 ## Build
 
