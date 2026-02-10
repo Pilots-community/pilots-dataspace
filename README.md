@@ -34,7 +34,7 @@ Once the script completes, follow the [End-to-End Example](#end-to-end-example-c
 ./test-e2e.sh
 ```
 
-This script runs all 7 E2E steps with assertions and exits with code 0 on success. CI runs it automatically on every push and PR to `main`.
+This script runs all 10 E2E steps (pull + push transfers) with assertions and exits with code 0 on success. CI runs it automatically on every push and PR to `main`.
 
 ## Build
 
@@ -209,7 +209,7 @@ curl http://localhost:38181/api/check/health
 > **Provider** = the connector that owns the data (management API on port **19193**)
 > **Consumer** = the connector requesting access (management API on port **29193**)
 
-Steps 1-3 set up data on the provider. Steps 4-7 run on the consumer side to discover, negotiate, and fetch that data.
+Steps 1-3 set up data on the provider. Steps 4-7 run a pull transfer (consumer fetches data via EDR). Steps 8-10 run a push transfer (provider pushes data to an HTTP endpoint).
 
 ### Environment Variables
 
@@ -418,7 +418,47 @@ curl -s http://localhost:38185/public \
   -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
-A successful response confirms the full DCP-authenticated data transfer pipeline is working — token issuance, credential presentation, contract enforcement, and EDR validation all passed. The current `dataplane-public-endpoint` extension returns a confirmation message; a production data plane would proxy the request to the asset's backing data source.
+A successful response returns the actual data from the asset's source URL (e.g., the JSON from `jsonplaceholder.typicode.com`). This confirms the full DCP-authenticated data transfer pipeline is working — token issuance, credential presentation, contract enforcement, EDR validation, and data proxying all passed.
+
+### 8. Push Transfer (HttpData-PUSH)
+
+Instead of the consumer pulling data via an EDR token, the provider data plane can **push** data directly to a consumer-specified HTTP endpoint. The `http-receiver` service in Docker Compose provides a simple endpoint for testing this.
+
+Reuse the same contract agreement from step 5. Specify `HttpData-PUSH` as the transfer type and a `dataDestination` with the receiver URL:
+
+```bash
+PUSH_TRANSFER_ID=$(curl -s -X POST http://localhost:29193/management/v3/transferprocesses \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: password" \
+  -d "{
+    \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+    \"counterPartyAddress\": \"${PROVIDER_DSP}\",
+    \"counterPartyId\": \"${PROVIDER_DID}\",
+    \"protocol\": \"dataspace-protocol-http\",
+    \"contractId\": \"${AGREEMENT_ID}\",
+    \"assetId\": \"sample-asset-1\",
+    \"transferType\": \"HttpData-PUSH\",
+    \"dataDestination\": {
+      \"type\": \"HttpData\",
+      \"baseUrl\": \"http://http-receiver:4000/\"
+    }
+  }" | jq -r '.["@id"]')
+
+echo "$PUSH_TRANSFER_ID"
+```
+
+Unlike pull transfers which stay in `STARTED`, push transfers reach `COMPLETED` once the data has been delivered:
+
+```bash
+curl -s http://localhost:29193/management/v3/transferprocesses/$PUSH_TRANSFER_ID \
+  -H "X-Api-Key: password" | jq '{state, type}'
+```
+
+Once completed, verify the data arrived at the receiver:
+
+```bash
+curl -s http://localhost:4000/ | jq .
+```
 
 ## Custom Extensions
 
@@ -431,7 +471,7 @@ Template extension demonstrating the EDC `ServiceExtension` interface.
 Provides three capabilities missing from the base `dataplane-base-bom`:
 
 1. **Public endpoint generator** - Registers an `HttpData` endpoint generator function so the data plane can issue EDR tokens with a valid public endpoint URL
-2. **Public API servlet** - Registers a JAX-RS controller on the `public` web context (port 38185) to serve data transfer requests
+2. **Public API proxy** - Registers a JAX-RS controller on the `public` web context (port 38185) that authorizes EDR tokens and proxies requests to the actual data source URL
 3. **Key loading** - Loads PEM signing keys from files into the vault at startup
 
 ### `extensions/superuser-seed`

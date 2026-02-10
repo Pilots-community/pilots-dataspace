@@ -1,8 +1,8 @@
 package org.eclipse.edc.extension;
 
 import org.eclipse.edc.connector.dataplane.spi.Endpoint;
+import org.eclipse.edc.connector.dataplane.spi.iam.DataPlaneAuthorizationService;
 import org.eclipse.edc.connector.dataplane.spi.iam.PublicEndpointGeneratorService;
-import org.eclipse.edc.connector.dataplane.spi.store.AccessTokenDataStore;
 import org.eclipse.edc.runtime.metamodel.annotation.Extension;
 import org.eclipse.edc.runtime.metamodel.annotation.Inject;
 import org.eclipse.edc.spi.security.Vault;
@@ -43,7 +43,7 @@ public class DataPlanePublicEndpointExtension implements ServiceExtension {
     private WebService webService;
 
     @Inject
-    private AccessTokenDataStore accessTokenDataStore;
+    private DataPlaneAuthorizationService authorizationService;
 
     @Override
     public String name() {
@@ -68,7 +68,7 @@ public class DataPlanePublicEndpointExtension implements ServiceExtension {
         }
 
         // Register the public API controller on the "public" web context
-        webService.registerResource(PUBLIC_CONTEXT, new DataPlanePublicApiController(accessTokenDataStore, context.getMonitor()));
+        webService.registerResource(PUBLIC_CONTEXT, new DataPlanePublicApiController(authorizationService, context.getMonitor()));
 
         // Load token signing keys from PEM files into the vault
         loadKeyIntoVault(context, PRIVATE_KEY_PATH_KEY,

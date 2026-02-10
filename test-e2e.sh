@@ -3,7 +3,8 @@ set -euo pipefail
 
 # End-to-end test for the Pilots Dataspace.
 # Runs the full flow: create asset, create policy, create contract definition,
-# request catalog, negotiate contract, initiate transfer, fetch data via EDR.
+# request catalog, negotiate contract, initiate transfer, fetch data via EDR,
+# then push transfer to an HTTP receiver.
 #
 # Prerequisites: All services must be running and seeded (./start.sh or ./setup.sh).
 #
@@ -15,6 +16,7 @@ set -euo pipefail
 PROVIDER_MGMT="http://localhost:19193/management"
 CONSUMER_MGMT="http://localhost:29193/management"
 DATA_PLANE_PUBLIC="http://localhost:38185/public"
+HTTP_RECEIVER="http://localhost:4000"
 API_KEY="password"
 
 # Docker Compose env vars (container-to-container addresses)
@@ -200,10 +202,10 @@ else
   assert_ok "Negotiation reaches FINALIZED within ${POLL_TIMEOUT}s" 1
 fi
 
-# ── Step 6: Initiate Transfer ───────────────────────────────────────────────
+# ── Step 6: Initiate Pull Transfer ──────────────────────────────────────────
 
 echo ""
-echo "=== Step 6: Initiate Transfer ==="
+echo "=== Step 6: Initiate Pull Transfer ==="
 
 if [ -z "$AGREEMENT_ID" ]; then
   echo "  Skipped (no agreement ID from step 5)"
@@ -254,14 +256,101 @@ else
       -H "Authorization: Bearer $TOKEN")
     echo "  HTTP $DATA_HTTP"
 
-    DATA_VALID_JSON=false
-    if jq . /tmp/e2e-data-response.json > /dev/null 2>&1; then
-      DATA_VALID_JSON=true
-    fi
-
     [ "$DATA_HTTP" = "200" ] && rc=0 || rc=1; assert_ok "Data plane returns HTTP 200" $rc
-    [ "$DATA_VALID_JSON" = "true" ] && rc=0 || rc=1; assert_ok "Data plane response is valid JSON" $rc
+
+    # Verify the response contains actual jsonplaceholder data
+    HAS_USERID=$(jq 'has("userId")' /tmp/e2e-data-response.json 2>/dev/null || echo "false")
+    HAS_ID=$(jq 'has("id")' /tmp/e2e-data-response.json 2>/dev/null || echo "false")
+    HAS_TITLE=$(jq 'has("title")' /tmp/e2e-data-response.json 2>/dev/null || echo "false")
+    HAS_COMPLETED=$(jq 'has("completed")' /tmp/e2e-data-response.json 2>/dev/null || echo "false")
+
+    if [ "$HAS_USERID" = "true" ] && [ "$HAS_ID" = "true" ] && [ "$HAS_TITLE" = "true" ] && [ "$HAS_COMPLETED" = "true" ]; then
+      rc=0
+    else
+      echo "    Response: $(cat /tmp/e2e-data-response.json)"
+      rc=1
+    fi
+    assert_ok "Response contains real data (userId, id, title, completed)" $rc
   fi
+fi
+
+# ── Step 8: Initiate Push Transfer ──────────────────────────────────────────
+
+echo ""
+echo "=== Step 8: Initiate Push Transfer ==="
+
+if [ -z "${AGREEMENT_ID:-}" ]; then
+  echo "  Skipped (no agreement ID from step 5)"
+  FAILED=$((FAILED + 1))
+  FAILURES+=("Push transfer skipped — no agreement ID")
+  PUSH_TRANSFER_ID=""
+else
+  PUSH_TRANSFER_ID=$(curl -s -X POST "${CONSUMER_MGMT}/v3/transferprocesses" \
+    -H "Content-Type: application/json" \
+    -H "X-Api-Key: $API_KEY" \
+    -d "{
+      \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+      \"counterPartyAddress\": \"${PROVIDER_DSP}\",
+      \"counterPartyId\": \"${PROVIDER_DID}\",
+      \"protocol\": \"dataspace-protocol-http\",
+      \"contractId\": \"${AGREEMENT_ID}\",
+      \"assetId\": \"sample-asset-1\",
+      \"transferType\": \"HttpData-PUSH\",
+      \"dataDestination\": {
+        \"type\": \"HttpData\",
+        \"baseUrl\": \"http://http-receiver:4000/\"
+      }
+    }" | jq -r '.["@id"]')
+
+  echo "  Push Transfer ID: ${PUSH_TRANSFER_ID}"
+  [ -n "$PUSH_TRANSFER_ID" ] && rc=0 || rc=1; assert_ok "Push transfer initiated successfully" $rc
+fi
+
+# ── Step 9: Poll Push Transfer to COMPLETED ─────────────────────────────────
+
+echo ""
+echo "=== Step 9: Poll Push Transfer ==="
+
+if [ -z "${PUSH_TRANSFER_ID:-}" ]; then
+  echo "  Skipped (no push transfer ID from step 8)"
+  FAILED=$((FAILED + 1))
+  FAILURES+=("Push transfer poll skipped — no transfer ID")
+else
+  echo "  Polling for COMPLETED state..."
+  if poll_state "${CONSUMER_MGMT}/v3/transferprocesses/${PUSH_TRANSFER_ID}" "COMPLETED" "$POLL_TIMEOUT"; then
+    assert_ok "Push transfer reaches COMPLETED" 0
+  else
+    assert_ok "Push transfer reaches COMPLETED within ${POLL_TIMEOUT}s" 1
+  fi
+fi
+
+# ── Step 10: Verify Pushed Data ─────────────────────────────────────────────
+
+echo ""
+echo "=== Step 10: Verify Pushed Data ==="
+
+if [ -z "${PUSH_TRANSFER_ID:-}" ]; then
+  echo "  Skipped (no push transfer from step 8)"
+  FAILED=$((FAILED + 1))
+  FAILURES+=("Push data verification skipped — no transfer")
+else
+  PUSH_DATA_HTTP=$(curl -s -o /tmp/e2e-push-data.json -w "%{http_code}" "${HTTP_RECEIVER}/")
+  echo "  HTTP $PUSH_DATA_HTTP"
+
+  [ "$PUSH_DATA_HTTP" = "200" ] && rc=0 || rc=1; assert_ok "HTTP receiver returns 200" $rc
+
+  HAS_USERID=$(jq 'has("userId")' /tmp/e2e-push-data.json 2>/dev/null || echo "false")
+  HAS_ID=$(jq 'has("id")' /tmp/e2e-push-data.json 2>/dev/null || echo "false")
+  HAS_TITLE=$(jq 'has("title")' /tmp/e2e-push-data.json 2>/dev/null || echo "false")
+  HAS_COMPLETED=$(jq 'has("completed")' /tmp/e2e-push-data.json 2>/dev/null || echo "false")
+
+  if [ "$HAS_USERID" = "true" ] && [ "$HAS_ID" = "true" ] && [ "$HAS_TITLE" = "true" ] && [ "$HAS_COMPLETED" = "true" ]; then
+    rc=0
+  else
+    echo "    Response: $(cat /tmp/e2e-push-data.json)"
+    rc=1
+  fi
+  assert_ok "Pushed data contains real data (userId, id, title, completed)" $rc
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────
