@@ -28,7 +28,13 @@ To restart services without rebuilding (e.g. after a reboot or `docker compose d
 
 Both scripts support `--clean` to wipe volumes (database, vault) and start fresh.
 
-Once the script completes, follow the [End-to-End Example](#end-to-end-example-catalog-negotiate-transfer) to create an asset, negotiate a contract, and transfer data.
+Once the script completes, follow the [End-to-End Example](#end-to-end-example-catalog-negotiate-transfer) to create an asset, negotiate a contract, and transfer data. Or run the automated E2E test:
+
+```bash
+./test-e2e.sh
+```
+
+This script runs all 7 E2E steps with assertions and exits with code 0 on success. CI runs it automatically on every push and PR to `main`.
 
 ## Build
 

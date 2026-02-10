@@ -1,0 +1,88 @@
+name: E2E Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq python3-cryptography
+
+      - name: Generate keys and credentials
+        run: ./generate-keys.sh
+
+      - name: Build Docker images
+        run: ./gradlew dockerize
+
+      - name: Start services
+        run: docker compose up -d
+
+      - name: Wait for healthy services
+        run: |
+          TIMEOUT=120
+          INTERVAL=5
+          ELAPSED=0
+          while true; do
+            TOTAL=$(docker compose ps --format json | grep -c '"Service"' || true)
+            HEALTHY=$(docker compose ps --format json | grep -c '"healthy"' || true)
+            if [ "$TOTAL" -gt 0 ] && [ "$HEALTHY" -eq "$TOTAL" ]; then
+              echo "All $TOTAL services are healthy."
+              break
+            fi
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo "Timed out after ${TIMEOUT}s waiting for services."
+              docker compose ps
+              docker compose logs --tail=50
+              exit 1
+            fi
+            echo "${HEALTHY}/${TOTAL} healthy (${ELAPSED}s / ${TIMEOUT}s)..."
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+      - name: Seed identity data
+        run: ./deployment/seed.sh
+
+      - name: Run E2E test
+        run: ./test-e2e.sh
+
+      - name: Docker Compose logs
+        if: failure()
+        run: docker compose logs --tail=200
+
+      - name: Save logs to file
+        if: failure()
+        run: docker compose logs > /tmp/docker-compose-logs.txt 2>&1
+
+      - name: Upload Docker Compose logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-compose-logs
+          path: /tmp/docker-compose-logs.txt
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
