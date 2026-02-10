@@ -7,6 +7,7 @@ set -euo pipefail
 #                (pull transfer via EDR + push transfer to HTTP receiver)
 #   Steps 11-17: Reverse direction — consumer owns data, provider requests it
 #                (pull transfer via EDR from consumer data plane)
+#   Steps 18-20: Reverse push transfer — provider pushes consumer's data to HTTP receiver
 #
 # Prerequisites: All services must be running and seeded (./start.sh or ./setup.sh).
 #
@@ -165,7 +166,11 @@ CATALOG_RESPONSE=$(curl -s -X POST "${CONSUMER_MGMT}/v3/catalog/request" \
     \"protocol\": \"dataspace-protocol-http\"
   }")
 
-OFFER_ID=$(echo "$CATALOG_RESPONSE" | jq -r '.["dcat:dataset"]["odrl:hasPolicy"]["@id"] // empty')
+OFFER_ID=$(echo "$CATALOG_RESPONSE" | jq -r '
+  .["dcat:dataset"]
+  | if type == "array" then .[] else . end
+  | select(.["@id"] == "sample-asset-1")
+  | .["odrl:hasPolicy"]["@id"] // empty')
 echo "  Offer ID: ${OFFER_ID:-<empty>}"
 [ -n "$OFFER_ID" ] && rc=0 || rc=1; assert_ok "Catalog returns a non-empty offer ID" $rc
 
@@ -567,6 +572,85 @@ else
     fi
     assert_ok "Reverse response contains real data (userId, id, title, completed)" $rc
   fi
+fi
+
+# ── Step 18: Provider Initiates Push Transfer from Consumer ────────────
+
+echo ""
+echo "=== Step 18: Provider Initiates Push Transfer from Consumer (reverse) ==="
+
+if [ -z "${REVERSE_AGREEMENT_ID:-}" ]; then
+  echo "  Skipped (no agreement ID from step 15)"
+  FAILED=$((FAILED + 1))
+  FAILURES+=("Reverse push transfer skipped — no agreement ID")
+  REVERSE_PUSH_TRANSFER_ID=""
+else
+  REVERSE_PUSH_TRANSFER_ID=$(curl -s -X POST "${PROVIDER_MGMT}/v3/transferprocesses" \
+    -H "Content-Type: application/json" \
+    -H "X-Api-Key: $API_KEY" \
+    -d "{
+      \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
+      \"counterPartyAddress\": \"${CONSUMER_DSP}\",
+      \"counterPartyId\": \"${CONSUMER_DID}\",
+      \"protocol\": \"dataspace-protocol-http\",
+      \"contractId\": \"${REVERSE_AGREEMENT_ID}\",
+      \"assetId\": \"reverse-asset-1\",
+      \"transferType\": \"HttpData-PUSH\",
+      \"dataDestination\": {
+        \"type\": \"HttpData\",
+        \"baseUrl\": \"http://http-receiver:4000/\"
+      }
+    }" | jq -r '.["@id"]')
+
+  echo "  Push Transfer ID: ${REVERSE_PUSH_TRANSFER_ID}"
+  [ -n "$REVERSE_PUSH_TRANSFER_ID" ] && rc=0 || rc=1; assert_ok "Reverse push transfer initiated successfully" $rc
+fi
+
+# ── Step 19: Poll Reverse Push Transfer to COMPLETED ───────────────────
+
+echo ""
+echo "=== Step 19: Poll Reverse Push Transfer ==="
+
+if [ -z "${REVERSE_PUSH_TRANSFER_ID:-}" ]; then
+  echo "  Skipped (no push transfer ID from step 18)"
+  FAILED=$((FAILED + 1))
+  FAILURES+=("Reverse push transfer poll skipped — no transfer ID")
+else
+  echo "  Polling for COMPLETED state..."
+  if poll_state "${PROVIDER_MGMT}/v3/transferprocesses/${REVERSE_PUSH_TRANSFER_ID}" "COMPLETED" "$POLL_TIMEOUT"; then
+    assert_ok "Reverse push transfer reaches COMPLETED" 0
+  else
+    assert_ok "Reverse push transfer reaches COMPLETED within ${POLL_TIMEOUT}s" 1
+  fi
+fi
+
+# ── Step 20: Verify Reverse Pushed Data ────────────────────────────────
+
+echo ""
+echo "=== Step 20: Verify Reverse Pushed Data ==="
+
+if [ -z "${REVERSE_PUSH_TRANSFER_ID:-}" ]; then
+  echo "  Skipped (no push transfer from step 18)"
+  FAILED=$((FAILED + 1))
+  FAILURES+=("Reverse push data verification skipped — no transfer")
+else
+  REVERSE_PUSH_DATA_HTTP=$(curl -s -o /tmp/e2e-reverse-push-data.json -w "%{http_code}" "${HTTP_RECEIVER}/")
+  echo "  HTTP $REVERSE_PUSH_DATA_HTTP"
+
+  [ "$REVERSE_PUSH_DATA_HTTP" = "200" ] && rc=0 || rc=1; assert_ok "HTTP receiver returns 200 for reverse push" $rc
+
+  HAS_USERID=$(jq 'has("userId")' /tmp/e2e-reverse-push-data.json 2>/dev/null || echo "false")
+  HAS_ID=$(jq 'has("id")' /tmp/e2e-reverse-push-data.json 2>/dev/null || echo "false")
+  HAS_TITLE=$(jq 'has("title")' /tmp/e2e-reverse-push-data.json 2>/dev/null || echo "false")
+  HAS_COMPLETED=$(jq 'has("completed")' /tmp/e2e-reverse-push-data.json 2>/dev/null || echo "false")
+
+  if [ "$HAS_USERID" = "true" ] && [ "$HAS_ID" = "true" ] && [ "$HAS_TITLE" = "true" ] && [ "$HAS_COMPLETED" = "true" ]; then
+    rc=0
+  else
+    echo "    Response: $(cat /tmp/e2e-reverse-push-data.json)"
+    rc=1
+  fi
+  assert_ok "Reverse pushed data contains real data (userId, id, title, completed)" $rc
 fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────
