@@ -23,6 +23,11 @@ Machine A                                Machine B
 | provider-dataplane     38181  | <----> | provider-dataplane     38181  |
 |   public:38185               |        |   public:38185               |
 |                               |        |                               |
+| consumer-dataplane     48181  | <----> | consumer-dataplane     48181  |
+|   public:48185               |        |   public:48185               |
+|                               |        |                               |
+| http-receiver          4000   |        | http-receiver          4000   |
+|                               |        |                               |
 | did-server             9876   |        | did-server             9876   |
 | vault                  8200   |        | vault                  8200   |
 | postgres              15432   |        | postgres              15432   |
@@ -254,13 +259,10 @@ curl <ENDPOINT_URL> \
   -H "Authorization: Bearer <TOKEN>"
 ```
 
-Expected response:
+Expected response (the sample asset proxies jsonplaceholder):
 
 ```json
-{
-  "message": "Data transfer successful via EDC data plane",
-  "jti": "c90bca94-7f3d-4aae-8454-be1073677284"
-}
+{"userId":1,"id":1,"title":"delectus aut autem","completed":false}
 ```
 
 ## Distributing Docker Images
@@ -291,6 +293,8 @@ The remote machine needs to reach these ports:
 | 9876 | DID Server (nginx) | Issuer DID document resolution |
 | 19194 | Provider CP DSP | Catalog requests, negotiation callbacks |
 | 29194 | Consumer CP DSP | Negotiation callbacks |
-| 38185 | Data Plane public | Data fetch via EDR token |
+| 38185 | Provider Data Plane public | Data fetch via EDR token |
+| 48185 | Consumer Data Plane public | Reverse data fetch via EDR token |
+| 4000  | http-receiver | Push transfer destination |
 
 Management ports (19193, 29193) only need to be reachable from your local terminal, not from the remote machine.

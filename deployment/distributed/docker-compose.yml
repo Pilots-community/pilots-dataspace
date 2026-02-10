@@ -227,6 +227,50 @@ services:
       timeout: 5s
       retries: 10
 
+  consumer-dataplane:
+    image: dataplane:latest
+    container_name: consumer-dataplane
+    command: >
+      sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
+      exec java -Djava.security.egd=file:/dev/urandom
+      -Dedc.fs.config=/app/config/dataplane-consumer.properties
+      -Dedc.participant.id=did:web:${MY_PUBLIC_HOST}%3A7083
+      -Dedc.dataplane.api.public.baseurl=http://${MY_PUBLIC_HOST}:48185/public
+      -jar edc-dataplane.jar"
+    ports:
+      - "48181:48181"
+      - "48182:48182"
+      - "48185:48185"
+    volumes:
+      - ../../config/docker/dataplane-consumer.properties:/app/config/dataplane-consumer.properties:ro
+      - ../../config/certs:/app/certs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+      consumer-controlplane:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:48181/api/check/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  http-receiver:
+    image: python:3-alpine
+    container_name: http-receiver
+    command: python /app/server.py
+    ports:
+      - "4000:4000"
+    volumes:
+      - ../../deployment/http-receiver/server.py:/app/server.py:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres-data:
   did-server-content:

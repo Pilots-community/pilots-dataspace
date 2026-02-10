@@ -150,13 +150,10 @@ curl http://100.113.174.98:38185/public \
   -H "Authorization: Bearer <TOKEN>"
 ```
 
-Expected response:
+Expected response (the sample asset proxies jsonplaceholder):
 
 ```json
-{
-  "message": "Data transfer successful via EDC data plane",
-  "jti": "c90bca94-7f3d-4aae-8454-be1073677284"
-}
+{"userId":1,"id":1,"title":"delectus aut autem","completed":false}
 ```
 
 ## What's Different from a Real Two-Machine Setup

@@ -17,6 +17,9 @@ Machine A (100.x.x.x)                    Machine B (100.x.x.x)
 |   DSP: 29194               | <-------->  |   DSP: 29194               |
 | provider-dataplane         |  WireGuard | provider-dataplane         |
 |   public: 38185            | <-------->  |   public: 38185            |
+| consumer-dataplane         |            | consumer-dataplane         |
+|   public: 48185            | <-------->  |   public: 48185            |
+| http-receiver: 4000        |            | http-receiver: 4000        |
 | did-server: 9876           |            | did-server: 9876           |
 | vault: 8200                |            | vault: 8200                |
 +----------------------------+            +----------------------------+
