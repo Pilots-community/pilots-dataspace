@@ -23,8 +23,9 @@ const links = [
 export function Sidebar() {
   return (
     <aside className="flex h-screen w-60 flex-col border-r bg-card">
-      <div className="flex h-14 items-center border-b px-4">
-        <span className="text-lg font-bold">EDC Dataspace</span>
+      <div className="flex h-14 items-center gap-2 border-b px-4">
+        <img src="/logo.svg" alt="Logo" className="h-6 w-6" />
+        <span className="text-lg font-bold">Pilots Dataspace</span>
       </div>
       <nav className="flex-1 space-y-1 p-2">
         {links.map((link) => (
