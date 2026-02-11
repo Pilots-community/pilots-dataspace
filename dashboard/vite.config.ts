@@ -22,6 +22,16 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api\/consumer/, "/management"),
       },
+      "/api/public/provider": {
+        target: "http://localhost:38185",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api\/public\/provider/, "/public"),
+      },
+      "/api/public/consumer": {
+        target: "http://localhost:48185",
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api\/public\/consumer/, "/public"),
+      },
       "/api/health/provider-cp": {
         target: "http://localhost:18181",
         changeOrigin: true,

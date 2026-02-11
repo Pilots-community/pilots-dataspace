@@ -22,11 +22,17 @@ export function EdrViewer({ transferId, onClose }: EdrViewerProps) {
   const endpoint = edr ? String(edr["endpoint"] ?? "") : "";
   const authorization = edr ? String(edr["authorization"] ?? "") : "";
 
+  function proxyUrl(url: string): string {
+    return url
+      .replace(/^https?:\/\/provider-dataplane:\d+\/public/, "/api/public/provider")
+      .replace(/^https?:\/\/consumer-dataplane:\d+\/public/, "/api/public/consumer");
+  }
+
   async function handleFetch() {
     if (!endpoint || !authorization) return;
     setFetching(true);
     try {
-      const text = await fetchWithAuth(endpoint, authorization);
+      const text = await fetchWithAuth(proxyUrl(endpoint), authorization);
       setFetchedData(text);
     } catch (err) {
       setFetchedData(`Error: ${err}`);

@@ -236,7 +236,7 @@ export function useEdrs(transferId: string | null) {
 
 export async function fetchWithAuth(url: string, token: string) {
   const res = await fetch(url, {
-    headers: { Authorization: `${token}` },
+    headers: { "X-Edr-Token": token },
   });
   if (!res.ok) throw new Error(`Fetch error ${res.status}`);
   return res.text();
