@@ -233,5 +233,24 @@ services:
       timeout: 5s
       retries: 5
 
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    image: dashboard:latest
+    container_name: dashboard
+    ports:
+      - "3000:80"
+    depends_on:
+      provider-controlplane:
+        condition: service_healthy
+      consumer-controlplane:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:80/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres-data:
