@@ -4,6 +4,10 @@ set -euo pipefail
 # Seed identity data into IdentityHubs after they start.
 # Usage: ./deployment/seed.sh
 #
+# NOTE: For Docker Compose deployment, seeding is now automatic via the
+# participant-bootstrap extension. This script is kept as a manual fallback
+# for native (non-Docker) development or re-seeding scenarios.
+#
 # Prerequisites: IdentityHubs and connectors must be running and healthy.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

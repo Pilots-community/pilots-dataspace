@@ -135,13 +135,10 @@ while true; do
 done
 echo ""
 
-# ── Step 7: Seed identity data ───────────────────────────────────────────────
-
-echo "=== Seeding identity data ==="
-./deployment/seed.sh
-echo ""
-
 # ── Done ─────────────────────────────────────────────────────────────────────
+# Identity seeding is automatic — the participant-bootstrap extension in each
+# IdentityHub creates the participant context, publishes the DID, stores the
+# STS client secret, and loads the MembershipCredential on first startup.
 
 echo "========================================"
 echo "  Dataspace is ready!"
