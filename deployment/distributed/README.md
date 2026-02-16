@@ -11,19 +11,19 @@ Machine A                                Machine B
 +-------------------------------+        +-------------------------------+
 | docker-compose.yml            |        | docker-compose.yml            |
 |                               |        |                               |
-| provider-identityhub   7090+  |        | provider-identityhub   7090+  |
-| consumer-identityhub   7080+  |        | consumer-identityhub   7080+  |
+| participant-1-identityhub   7090+  |        | participant-1-identityhub   7090+  |
+| participant-2-identityhub   7080+  |        | participant-2-identityhub   7080+  |
 |                               |        |                               |
-| provider-controlplane  18181  | <----> | provider-controlplane  18181  |
+| participant-1-controlplane  18181  | <----> | participant-1-controlplane  18181  |
 |   mgmt:19193 DSP:19194       |        |   mgmt:19193 DSP:19194       |
 |                               |        |                               |
-| consumer-controlplane  28181  | <----> | consumer-controlplane  28181  |
+| participant-2-controlplane  28181  | <----> | participant-2-controlplane  28181  |
 |   mgmt:29193 DSP:29194       |        |   mgmt:29193 DSP:29194       |
 |                               |        |                               |
-| provider-dataplane     38181  | <----> | provider-dataplane     38181  |
+| participant-1-dataplane     38181  | <----> | participant-1-dataplane     38181  |
 |   public:38185               |        |   public:38185               |
 |                               |        |                               |
-| consumer-dataplane     48181  | <----> | consumer-dataplane     48181  |
+| participant-2-dataplane     48181  | <----> | participant-2-dataplane     48181  |
 |   public:48185               |        |   public:48185               |
 |                               |        |                               |
 | http-receiver          4000   |        | http-receiver          4000   |
@@ -38,11 +38,11 @@ Both machines run identical services on identical ports. No port conflicts since
 
 ## How `MY_PUBLIC_HOST` Works
 
-EDC connectors exchange callback URLs during negotiation and transfer. In the single-machine `docker-compose.yml` (project root), these URLs use Docker service names (e.g. `http://provider-controlplane:19194`). That only works when both connectors share the same Docker network.
+EDC connectors exchange callback URLs during negotiation and transfer. In the single-machine `docker-compose.yml` (project root), these URLs use Docker service names (e.g. `http://participant-1-controlplane:19194`). That only works when both connectors share the same Docker network.
 
 In a distributed setup, the remote machine can't resolve Docker service names. `MY_PUBLIC_HOST` is the IP or hostname that **the other machine** will use to reach **this machine**. It gets injected into:
 
-- **DID identifiers**: `did:web:<MY_PUBLIC_HOST>%3A7093` (provider), `did:web:<MY_PUBLIC_HOST>%3A7083` (consumer)
+- **DID identifiers**: `did:web:<MY_PUBLIC_HOST>%3A7093` (participant-1), `did:web:<MY_PUBLIC_HOST>%3A7083` (participant-2)
 - **DSP callback URLs**: `http://<MY_PUBLIC_HOST>:19194/protocol`
 - **IdentityHub hostname**: so DID documents are served with the correct Host header
 - **STS key aliases**: so the embedded STS uses the correct key pairs
@@ -122,7 +122,7 @@ On macOS/Windows with Docker Desktop, use `host.docker.internal` instead.
 
 ## End-to-End Example
 
-In this example, Machine A is the **provider** (owns the data) and Machine B is the **consumer** (requests data). Replace `<HOST>` with Machine A's `MY_PUBLIC_HOST` value, `<PROVIDER_DID>` with `did:web:<HOST>%3A7093`, and `<CONSUMER_HOST>` with Machine B's `MY_PUBLIC_HOST` value.
+In this example, Machine A is the **provider** (owns the data) and Machine B is the **consumer** (requests data). Replace `<HOST>` with Machine A's `MY_PUBLIC_HOST` value, `<P1_DID>` with `did:web:<HOST>%3A7093`, and `<P2_HOST>` with Machine B's `MY_PUBLIC_HOST` value.
 
 ### On Machine A: Set Up the Data (Steps 1-3)
 
@@ -180,7 +180,7 @@ curl -X POST http://localhost:29193/management/v3/catalog/request \
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "@type": "CatalogRequest",
     "counterPartyAddress": "http://<HOST>:19194/protocol",
-    "counterPartyId": "<PROVIDER_DID>",
+    "counterPartyId": "<P1_DID>",
     "protocol": "dataspace-protocol-http"
   }'
 ```
@@ -199,13 +199,13 @@ curl -X POST http://localhost:29193/management/v3/contractnegotiations \
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/", "odrl": "http://www.w3.org/ns/odrl/2/" },
     "@type": "ContractRequest",
     "counterPartyAddress": "http://<HOST>:19194/protocol",
-    "counterPartyId": "<PROVIDER_DID>",
+    "counterPartyId": "<P1_DID>",
     "protocol": "dataspace-protocol-http",
     "policy": {
       "@type": "odrl:Offer",
       "@id": "<OFFER_ID>",
       "odrl:target": { "@id": "sample-asset-1" },
-      "odrl:assigner": { "@id": "<PROVIDER_DID>" },
+      "odrl:assigner": { "@id": "<P1_DID>" },
       "odrl:permission": [], "odrl:prohibition": [], "odrl:obligation": []
     }
   }'
@@ -278,14 +278,14 @@ curl -X POST http://localhost:29193/management/v3/transferprocesses \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "counterPartyAddress": "http://<HOST>:19194/protocol",
-    "counterPartyId": "<PROVIDER_DID>",
+    "counterPartyId": "<P1_DID>",
     "protocol": "dataspace-protocol-http",
     "contractId": "<AGREEMENT_ID>",
     "assetId": "sample-asset-1",
     "transferType": "HttpData-PUSH",
     "dataDestination": {
       "type": "HttpData",
-      "baseUrl": "http://<CONSUMER_HOST>:4000/"
+      "baseUrl": "http://<P2_HOST>:4000/"
     }
   }'
 ```
@@ -307,11 +307,11 @@ curl http://localhost:4000/
 
 The previous steps tested the forward direction (Machine A owns data, Machine B requests it). The following steps test the reverse — Machine B owns data, Machine A requests it — proving bidirectional data sharing works.
 
-Replace `<CONSUMER_HOST>` with Machine B's `MY_PUBLIC_HOST` and `<CONSUMER_DID>` with `did:web:<CONSUMER_HOST>%3A7083`.
+Replace `<P2_HOST>` with Machine B's `MY_PUBLIC_HOST` and `<P2_DID>` with `did:web:<P2_HOST>%3A7083`.
 
 #### 9. On Machine B: Create Asset, Policy, and Contract
 
-Create an asset, policy, and contract definition on the **consumer** management API:
+Create an asset, policy, and contract definition on the **participant-2** management API:
 
 ```bash
 curl -X POST http://localhost:29193/management/v3/assets \
@@ -320,7 +320,7 @@ curl -X POST http://localhost:29193/management/v3/assets \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "@id": "reverse-asset-1",
-    "properties": { "name": "Consumer Data Asset", "contenttype": "application/json" },
+    "properties": { "name": "Participant-2 Data Asset", "contenttype": "application/json" },
     "dataAddress": { "type": "HttpData", "baseUrl": "https://jsonplaceholder.typicode.com/todos/2" }
   }'
 
@@ -356,8 +356,8 @@ curl -X POST http://localhost:19193/management/v3/catalog/request \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "@type": "CatalogRequest",
-    "counterPartyAddress": "http://<CONSUMER_HOST>:29194/protocol",
-    "counterPartyId": "<CONSUMER_DID>",
+    "counterPartyAddress": "http://<P2_HOST>:29194/protocol",
+    "counterPartyId": "<P2_DID>",
     "protocol": "dataspace-protocol-http"
   }'
 ```
@@ -371,14 +371,14 @@ curl -X POST http://localhost:19193/management/v3/contractnegotiations \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/", "odrl": "http://www.w3.org/ns/odrl/2/" },
     "@type": "ContractRequest",
-    "counterPartyAddress": "http://<CONSUMER_HOST>:29194/protocol",
-    "counterPartyId": "<CONSUMER_DID>",
+    "counterPartyAddress": "http://<P2_HOST>:29194/protocol",
+    "counterPartyId": "<P2_DID>",
     "protocol": "dataspace-protocol-http",
     "policy": {
       "@type": "odrl:Offer",
       "@id": "<OFFER_ID>",
       "odrl:target": { "@id": "reverse-asset-1" },
-      "odrl:assigner": { "@id": "<CONSUMER_DID>" },
+      "odrl:assigner": { "@id": "<P2_DID>" },
       "odrl:permission": [], "odrl:prohibition": [], "odrl:obligation": []
     }
   }'
@@ -403,7 +403,7 @@ curl -X POST http://localhost:19193/management/v3/transferprocesses \
   -H "x-api-key: password" \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
-    "counterPartyAddress": "http://<CONSUMER_HOST>:29194/protocol",
+    "counterPartyAddress": "http://<P2_HOST>:29194/protocol",
     "protocol": "dataspace-protocol-http",
     "contractId": "<AGREEMENT_ID>",
     "assetId": "reverse-asset-1",
@@ -411,7 +411,7 @@ curl -X POST http://localhost:19193/management/v3/transferprocesses \
   }'
 ```
 
-Poll until `STARTED`, then retrieve the EDR and fetch data. The endpoint will use the **consumer data plane** (port 48185 on Machine B):
+Poll until `STARTED`, then retrieve the EDR and fetch data. The endpoint will use the **participant-2 data plane** (port 48185 on Machine B):
 
 ```bash
 curl http://localhost:19193/management/v3/edrs/<TRANSFER_ID>/dataaddress \
@@ -450,15 +450,15 @@ The remote machine needs to reach these ports:
 
 | Port | Service | Why |
 |------|---------|-----|
-| 7081 | Consumer IdentityHub Credentials API | VP/VC presentation requests |
-| 7083 | Consumer IdentityHub DID endpoint | DID document resolution |
-| 7091 | Provider IdentityHub Credentials API | VP/VC presentation requests |
-| 7093 | Provider IdentityHub DID endpoint | DID document resolution |
+| 7081 | Participant-2 IdentityHub Credentials API | VP/VC presentation requests |
+| 7083 | Participant-2 IdentityHub DID endpoint | DID document resolution |
+| 7091 | Participant-1 IdentityHub Credentials API | VP/VC presentation requests |
+| 7093 | Participant-1 IdentityHub DID endpoint | DID document resolution |
 | 9876 | DID Server (nginx) | Issuer DID document resolution |
-| 19194 | Provider CP DSP | Catalog requests, negotiation callbacks |
-| 29194 | Consumer CP DSP | Negotiation callbacks |
-| 38185 | Provider Data Plane public | Data fetch via EDR token |
-| 48185 | Consumer Data Plane public | Reverse data fetch via EDR token |
+| 19194 | Participant-1 CP DSP | Catalog requests, negotiation callbacks |
+| 29194 | Participant-2 CP DSP | Negotiation callbacks |
+| 38185 | Participant-1 Data Plane public | Data fetch via EDR token |
+| 48185 | Participant-2 Data Plane public | Reverse data fetch via EDR token |
 | 4000  | http-receiver | Push transfer destination |
 
 Management ports (19193, 29193) only need to be reachable from your local terminal, not from the remote machine.

@@ -34,7 +34,7 @@ Once the script completes, follow the [End-to-End Example](#end-to-end-example-c
 ./test-e2e.sh
 ```
 
-This script runs all 20 E2E steps with 23 assertions — forward direction (provider-to-consumer pull + push transfers) and reverse direction (consumer-to-provider pull + push transfers) — and exits with code 0 on success. CI runs it automatically on every push and PR to `main`.
+This script runs all 20 E2E steps with 23 assertions — forward direction (participant-1-to-participant-2 pull + push transfers) and reverse direction (participant-2-to-participant-1 pull + push transfers) — and exits with code 0 on success. CI runs it automatically on every push and PR to `main`.
 
 ## Build
 
@@ -60,12 +60,12 @@ This project uses the **Decentralized Claims Protocol (DCP)** for identity, repl
 
 | Component | Config File | Ports |
 |-----------|------------|-------|
-| Provider Control Plane | `config/controlplane.properties` | default: 18181, mgmt: 19193, DSP: 19194, control: 19192 |
-| Consumer Control Plane | `config/controlplane-consumer.properties` | default: 28181, mgmt: 29193, DSP: 29194, control: 29192 |
-| Provider Data Plane | `config/dataplane.properties` | default: 38181, control: 38182, public: 38185 |
-| Consumer Data Plane | `config/dataplane-consumer.properties` | default: 48181, control: 48182, public: 48185 |
-| Provider IdentityHub | `config/identityhub-provider.properties` | base: 7090, creds: 7091, identity: 7092, DID: 7093, version: 7095, STS: 7096 |
-| Consumer IdentityHub | `config/identityhub-consumer.properties` | base: 7080, creds: 7081, identity: 7082, DID: 7083, version: 7085, STS: 7086 |
+| Participant-1 Control Plane | `config/controlplane-participant-1.properties` | default: 18181, mgmt: 19193, DSP: 19194, control: 19192 |
+| Participant-2 Control Plane | `config/controlplane-participant-2.properties` | default: 28181, mgmt: 29193, DSP: 29194, control: 29192 |
+| Participant-1 Data Plane | `config/dataplane-participant-1.properties` | default: 38181, control: 38182, public: 38185 |
+| Participant-2 Data Plane | `config/dataplane-participant-2.properties` | default: 48181, control: 48182, public: 48185 |
+| Participant-1 IdentityHub | `config/identityhub-participant-1.properties` | base: 7090, creds: 7091, identity: 7092, DID: 7093, version: 7095, STS: 7096 |
+| Participant-2 IdentityHub | `config/identityhub-participant-2.properties` | base: 7080, creds: 7081, identity: 7082, DID: 7083, version: 7085, STS: 7086 |
 | DID Server (NGINX) | — | 9876 |
 
 ## Generate Keys and Credentials
@@ -85,20 +85,20 @@ Private keys are gitignored and never committed to the repository. Each develope
 Start all three runtimes in separate terminals:
 
 ```bash
-# Terminal 1: Provider Control Plane
-java -Dedc.fs.config=config/controlplane.properties \
+# Terminal 1: Participant-1 Control Plane
+java -Dedc.fs.config=config/controlplane-participant-1.properties \
      -jar runtimes/controlplane/build/libs/controlplane.jar
 
-# Terminal 2: Consumer Control Plane
-java -Dedc.fs.config=config/controlplane-consumer.properties \
+# Terminal 2: Participant-2 Control Plane
+java -Dedc.fs.config=config/controlplane-participant-2.properties \
      -jar runtimes/controlplane/build/libs/controlplane.jar
 
-# Terminal 3: Provider Data Plane
-java -Dedc.fs.config=config/dataplane.properties \
+# Terminal 3: Participant-1 Data Plane
+java -Dedc.fs.config=config/dataplane-participant-1.properties \
      -jar runtimes/dataplane/build/libs/dataplane.jar
 
-# Terminal 4: Consumer Data Plane
-java -Dedc.fs.config=config/dataplane-consumer.properties \
+# Terminal 4: Participant-2 Data Plane
+java -Dedc.fs.config=config/dataplane-participant-2.properties \
      -jar runtimes/dataplane/build/libs/dataplane.jar
 ```
 
@@ -184,10 +184,10 @@ When running runtimes directly with `java -jar`, you need a local PostgreSQL ins
 # Create the user and databases
 sudo -u postgres psql <<'SQL'
 CREATE USER edc WITH PASSWORD 'edc';
-CREATE DATABASE provider_controlplane OWNER edc;
-CREATE DATABASE consumer_controlplane OWNER edc;
-CREATE DATABASE provider_dataplane OWNER edc;
-CREATE DATABASE consumer_dataplane OWNER edc;
+CREATE DATABASE participant_1_controlplane OWNER edc;
+CREATE DATABASE participant_2_controlplane OWNER edc;
+CREATE DATABASE participant_1_dataplane OWNER edc;
+CREATE DATABASE participant_2_dataplane OWNER edc;
 SQL
 ```
 
@@ -200,48 +200,48 @@ To run connectors on separate machines communicating over a network tunnel, see 
 ## Verify Health
 
 ```bash
-# Provider Control Plane
+# Participant-1 Control Plane
 curl http://localhost:18181/api/check/health
 
-# Consumer Control Plane
+# Participant-2 Control Plane
 curl http://localhost:28181/api/check/health
 
-# Data Plane
+# Participant-1 Data Plane
 curl http://localhost:38181/api/check/health
 ```
 
 ## End-to-End Example: Catalog, Negotiate, Transfer
 
-> **Provider** = the connector that owns the data (management API on port **19193**)
-> **Consumer** = the connector requesting access (management API on port **29193**)
+> **Participant-1** = the connector that owns the data in the forward direction (management API on port **19193**)
+> **Participant-2** = the connector requesting access in the forward direction (management API on port **29193**)
 
-Steps 1-3 set up data on the provider. Steps 4-7 run a pull transfer (consumer fetches data via EDR). Steps 8-10 run a push transfer (provider pushes data to an HTTP endpoint). Steps 11-14 test the **reverse direction** — the consumer owns data and the provider requests it — proving bidirectional data sharing works.
+Steps 1-3 set up data on participant-1. Steps 4-7 run a pull transfer (participant-2 fetches data via EDR). Steps 8-10 run a push transfer (participant-1 pushes data to an HTTP endpoint). Steps 11-14 test the **reverse direction** — participant-2 owns data and participant-1 requests it — proving bidirectional data sharing works.
 
 ### Environment Variables
 
-Set these once before running the steps below. The values differ between native and Docker Compose because the `counterPartyAddress` uses Docker service names for container-to-container communication, and the `counterPartyId` / provider DID depends on the IdentityHub hostname.
+Set these once before running the steps below. The values differ between native and Docker Compose because the `counterPartyAddress` uses Docker service names for container-to-container communication, and the `counterPartyId` / participant DID depends on the IdentityHub hostname.
 
 **Native:**
 
 ```bash
-PROVIDER_DSP="http://localhost:19194/protocol"
-PROVIDER_DID="did:web:localhost%3A7093"
-CONSUMER_DSP="http://localhost:29194/protocol"
-CONSUMER_DID="did:web:localhost%3A7083"
+P1_DSP="http://localhost:19194/protocol"
+P1_DID="did:web:localhost%3A7093"
+P2_DSP="http://localhost:29194/protocol"
+P2_DID="did:web:localhost%3A7083"
 ```
 
 **Docker Compose:**
 
 ```bash
-PROVIDER_DSP="http://provider-controlplane:19194/protocol"
-PROVIDER_DID="did:web:provider-identityhub%3A7093"
-CONSUMER_DSP="http://consumer-controlplane:29194/protocol"
-CONSUMER_DID="did:web:consumer-identityhub%3A7083"
+P1_DSP="http://participant-1-controlplane:19194/protocol"
+P1_DID="did:web:participant-1-identityhub%3A7093"
+P2_DSP="http://participant-2-controlplane:29194/protocol"
+P2_DID="did:web:participant-2-identityhub%3A7083"
 ```
 
-### 1. Create an Asset on the Provider
+### 1. Create an Asset on Participant-1
 
-Register a data source on the provider. This example exposes a public JSON API as an asset:
+Register a data source on participant-1. This example exposes a public JSON API as an asset:
 
 ```bash
 curl -X POST http://localhost:19193/management/v3/assets \
@@ -264,7 +264,7 @@ curl -X POST http://localhost:19193/management/v3/assets \
 
 ### 2. Create a Policy Definition
 
-Create an open (permit-all) policy on the provider. In production you would add constraints here:
+Create an open (permit-all) policy on participant-1. In production you would add constraints here:
 
 ```bash
 curl -X POST http://localhost:19193/management/v3/policydefinitions \
@@ -288,7 +288,7 @@ curl -X POST http://localhost:19193/management/v3/policydefinitions \
 
 ### 3. Create a Contract Definition
 
-Link the asset to the policy on the provider. This makes the asset visible in the provider's catalog:
+Link the asset to the policy on participant-1. This makes the asset visible in participant-1's catalog:
 
 ```bash
 curl -X POST http://localhost:19193/management/v3/contractdefinitions \
@@ -303,9 +303,9 @@ curl -X POST http://localhost:19193/management/v3/contractdefinitions \
   }'
 ```
 
-### 4. Request the Catalog (from Consumer)
+### 4. Request the Catalog (from Participant-2)
 
-Ask the consumer to fetch the provider's catalog. `counterPartyAddress` tells the consumer where to find the provider's DSP endpoint. `counterPartyId` must be the provider's DID — this is required for DCP authentication (the consumer uses it as the JWT audience when requesting an STS token).
+Ask the consumer to fetch participant-1's catalog. `counterPartyAddress` tells the consumer where to find participant-1's DSP endpoint. `counterPartyId` must be participant-1's DID — this is required for DCP authentication (the consumer uses it as the JWT audience when requesting an STS token).
 
 ```bash
 curl -s -X POST http://localhost:29193/management/v3/catalog/request \
@@ -313,8 +313,8 @@ curl -s -X POST http://localhost:29193/management/v3/catalog/request \
   -H "X-Api-Key: password" \
   -d "{
     \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-    \"counterPartyAddress\": \"${PROVIDER_DSP}\",
-    \"counterPartyId\": \"${PROVIDER_DID}\",
+    \"counterPartyAddress\": \"${P1_DSP}\",
+    \"counterPartyId\": \"${P1_DID}\",
     \"protocol\": \"dataspace-protocol-http\"
   }" | jq .
 ```
@@ -327,8 +327,8 @@ OFFER_ID=$(curl -s -X POST http://localhost:29193/management/v3/catalog/request 
   -H "X-Api-Key: password" \
   -d "{
     \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-    \"counterPartyAddress\": \"${PROVIDER_DSP}\",
-    \"counterPartyId\": \"${PROVIDER_DID}\",
+    \"counterPartyAddress\": \"${P1_DSP}\",
+    \"counterPartyId\": \"${P1_DID}\",
     \"protocol\": \"dataspace-protocol-http\"
   }" | jq -r '.["dcat:dataset"]["odrl:hasPolicy"]["@id"]')
 
@@ -339,7 +339,7 @@ It looks like a Base64-encoded string, e.g. `c2FtcGxlLWNvbnRyYWN0LWRlZg==:c2FtcG
 
 ### 5. Negotiate a Contract
 
-Start a contract negotiation on the consumer side using the offer ID from step 4. The `assigner` must be the provider's DID.
+Start a contract negotiation on the consumer side using the offer ID from step 4. The `assigner` must be participant-1's DID.
 
 ```bash
 NEGOTIATION_ID=$(curl -s -X POST http://localhost:29193/management/v3/contractnegotiations \
@@ -347,14 +347,14 @@ NEGOTIATION_ID=$(curl -s -X POST http://localhost:29193/management/v3/contractne
   -H "X-Api-Key: password" \
   -d "{
     \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-    \"counterPartyAddress\": \"${PROVIDER_DSP}\",
-    \"counterPartyId\": \"${PROVIDER_DID}\",
+    \"counterPartyAddress\": \"${P1_DSP}\",
+    \"counterPartyId\": \"${P1_DID}\",
     \"protocol\": \"dataspace-protocol-http\",
     \"policy\": {
       \"@context\": \"http://www.w3.org/ns/odrl.jsonld\",
       \"@id\": \"${OFFER_ID}\",
       \"@type\": \"Offer\",
-      \"assigner\": \"${PROVIDER_DID}\",
+      \"assigner\": \"${P1_DID}\",
       \"target\": \"sample-asset-1\",
       \"permission\": [],
       \"prohibition\": [],
@@ -391,8 +391,8 @@ TRANSFER_ID=$(curl -s -X POST http://localhost:29193/management/v3/transferproce
   -H "X-Api-Key: password" \
   -d "{
     \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-    \"counterPartyAddress\": \"${PROVIDER_DSP}\",
-    \"counterPartyId\": \"${PROVIDER_DID}\",
+    \"counterPartyAddress\": \"${P1_DSP}\",
+    \"counterPartyId\": \"${P1_DID}\",
     \"protocol\": \"dataspace-protocol-http\",
     \"contractId\": \"${AGREEMENT_ID}\",
     \"assetId\": \"sample-asset-1\",
@@ -418,7 +418,7 @@ curl -s http://localhost:29193/management/v3/edrs/$TRANSFER_ID/dataaddress \
   -H "X-Api-Key: password" | jq .
 ```
 
-The response contains an `endpoint` URL and an `authorization` token. When running with Docker Compose, the `endpoint` shows the Docker service name (`http://provider-dataplane:38185/public`) — from your host terminal use `localhost` instead. Extract the token and fetch the actual data:
+The response contains an `endpoint` URL and an `authorization` token. When running with Docker Compose, the `endpoint` shows the Docker service name (`http://participant-1-dataplane:38185/public`) — from your host terminal use `localhost` instead. Extract the token and fetch the actual data:
 
 ```bash
 TOKEN=$(curl -s http://localhost:29193/management/v3/edrs/$TRANSFER_ID/dataaddress \
@@ -432,7 +432,7 @@ A successful response returns the actual data from the asset's source URL (e.g.,
 
 ### 8. Push Transfer (HttpData-PUSH)
 
-Instead of the consumer pulling data via an EDR token, the provider data plane can **push** data directly to a consumer-specified HTTP endpoint. The `http-receiver` service in Docker Compose provides a simple endpoint for testing this.
+Instead of the consumer pulling data via an EDR token, the participant-1 data plane can **push** data directly to a consumer-specified HTTP endpoint. The `http-receiver` service in Docker Compose provides a simple endpoint for testing this.
 
 Reuse the same contract agreement from step 5. Specify `HttpData-PUSH` as the transfer type and a `dataDestination` with the receiver URL:
 
@@ -442,8 +442,8 @@ PUSH_TRANSFER_ID=$(curl -s -X POST http://localhost:29193/management/v3/transfer
   -H "X-Api-Key: password" \
   -d "{
     \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-    \"counterPartyAddress\": \"${PROVIDER_DSP}\",
-    \"counterPartyId\": \"${PROVIDER_DID}\",
+    \"counterPartyAddress\": \"${P1_DSP}\",
+    \"counterPartyId\": \"${P1_DID}\",
     \"protocol\": \"dataspace-protocol-http\",
     \"contractId\": \"${AGREEMENT_ID}\",
     \"assetId\": \"sample-asset-1\",
@@ -470,9 +470,9 @@ Once completed, verify the data arrived at the receiver:
 curl -s http://localhost:4000/ | jq .
 ```
 
-### 9. Reverse Direction: Create Asset, Policy, and Contract on the Consumer
+### 9. Reverse Direction: Create Asset, Policy, and Contract on Participant-2
 
-The previous steps tested the forward direction (provider owns data, consumer requests it). To test the reverse — consumer owns data, provider requests it — create an asset, policy, and contract definition on the **consumer** management API (port 29193):
+The previous steps tested the forward direction (participant-1 owns data, participant-2 requests it). To test the reverse — participant-2 owns data, participant-1 requests it — create an asset, policy, and contract definition on **participant-2's** management API (port 29193):
 
 ```bash
 curl -X POST http://localhost:29193/management/v3/assets \
@@ -482,8 +482,8 @@ curl -X POST http://localhost:29193/management/v3/assets \
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "@id": "reverse-asset-1",
     "properties": {
-      "name": "Consumer Data Asset",
-      "description": "A dataset owned by the consumer",
+      "name": "Participant-2 Data Asset",
+      "description": "A dataset owned by participant-2",
       "contenttype": "application/json"
     },
     "dataAddress": {
@@ -522,9 +522,9 @@ curl -X POST http://localhost:29193/management/v3/contractdefinitions \
   }'
 ```
 
-### 10. Reverse: Provider Requests Consumer's Catalog and Negotiates
+### 10. Reverse: Participant-1 Requests Participant-2's Catalog and Negotiates
 
-Now the **provider** fetches the consumer's catalog and negotiates a contract. Note the roles are swapped — `counterPartyAddress` points to the consumer's DSP endpoint and `counterPartyId` is the consumer's DID:
+Now **participant-1** fetches participant-2's catalog and negotiates a contract. Note the roles are swapped — `counterPartyAddress` points to participant-2's DSP endpoint and `counterPartyId` is participant-2's DID:
 
 ```bash
 REVERSE_OFFER_ID=$(curl -s -X POST http://localhost:19193/management/v3/catalog/request \
@@ -532,15 +532,15 @@ REVERSE_OFFER_ID=$(curl -s -X POST http://localhost:19193/management/v3/catalog/
   -H "X-Api-Key: password" \
   -d "{
     \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-    \"counterPartyAddress\": \"${CONSUMER_DSP}\",
-    \"counterPartyId\": \"${CONSUMER_DID}\",
+    \"counterPartyAddress\": \"${P2_DSP}\",
+    \"counterPartyId\": \"${P2_DID}\",
     \"protocol\": \"dataspace-protocol-http\"
   }" | jq -r '.["dcat:dataset"] | if type == "array" then .[] else . end | select(.["@id"] == "reverse-asset-1") | .["odrl:hasPolicy"]["@id"]')
 
 echo "$REVERSE_OFFER_ID"
 ```
 
-Negotiate using the provider management API. The `assigner` is the consumer's DID:
+Negotiate using participant-1's management API. The `assigner` is participant-2's DID:
 
 ```bash
 REVERSE_NEGOTIATION_ID=$(curl -s -X POST http://localhost:19193/management/v3/contractnegotiations \
@@ -548,14 +548,14 @@ REVERSE_NEGOTIATION_ID=$(curl -s -X POST http://localhost:19193/management/v3/co
   -H "X-Api-Key: password" \
   -d "{
     \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-    \"counterPartyAddress\": \"${CONSUMER_DSP}\",
-    \"counterPartyId\": \"${CONSUMER_DID}\",
+    \"counterPartyAddress\": \"${P2_DSP}\",
+    \"counterPartyId\": \"${P2_DID}\",
     \"protocol\": \"dataspace-protocol-http\",
     \"policy\": {
       \"@context\": \"http://www.w3.org/ns/odrl.jsonld\",
       \"@id\": \"${REVERSE_OFFER_ID}\",
       \"@type\": \"Offer\",
-      \"assigner\": \"${CONSUMER_DID}\",
+      \"assigner\": \"${P2_DID}\",
       \"target\": \"reverse-asset-1\",
       \"permission\": [],
       \"prohibition\": [],
@@ -576,9 +576,9 @@ REVERSE_AGREEMENT_ID=$(curl -s http://localhost:19193/management/v3/contractnego
   -H "X-Api-Key: password" | jq -r '.contractAgreementId')
 ```
 
-### 11. Reverse: Provider Pulls Data and Fetches via EDR
+### 11. Reverse: Participant-1 Pulls Data and Fetches via EDR
 
-Initiate a pull transfer from the provider side:
+Initiate a pull transfer from participant-1's side:
 
 ```bash
 REVERSE_TRANSFER_ID=$(curl -s -X POST http://localhost:19193/management/v3/transferprocesses \
@@ -586,8 +586,8 @@ REVERSE_TRANSFER_ID=$(curl -s -X POST http://localhost:19193/management/v3/trans
   -H "X-Api-Key: password" \
   -d "{
     \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-    \"counterPartyAddress\": \"${CONSUMER_DSP}\",
-    \"counterPartyId\": \"${CONSUMER_DID}\",
+    \"counterPartyAddress\": \"${P2_DSP}\",
+    \"counterPartyId\": \"${P2_DID}\",
     \"protocol\": \"dataspace-protocol-http\",
     \"contractId\": \"${REVERSE_AGREEMENT_ID}\",
     \"assetId\": \"reverse-asset-1\",
@@ -597,7 +597,7 @@ REVERSE_TRANSFER_ID=$(curl -s -X POST http://localhost:19193/management/v3/trans
 echo "$REVERSE_TRANSFER_ID"
 ```
 
-Poll until `STARTED`, then retrieve the EDR and fetch data from the **consumer data plane** (port 48185):
+Poll until `STARTED`, then retrieve the EDR and fetch data from the **participant-2 data plane** (port 48185):
 
 ```bash
 REVERSE_TOKEN=$(curl -s http://localhost:19193/management/v3/edrs/$REVERSE_TRANSFER_ID/dataaddress \
@@ -607,7 +607,7 @@ curl -s http://localhost:48185/public \
   -H "Authorization: Bearer $REVERSE_TOKEN" | jq .
 ```
 
-A successful response returns the JSON from `jsonplaceholder.typicode.com/todos/2`, confirming that bidirectional data sharing works — the consumer data plane can serve data just like the provider data plane.
+A successful response returns the JSON from `jsonplaceholder.typicode.com/todos/2`, confirming that bidirectional data sharing works — the participant-2 data plane can serve data just like the participant-1 data plane.
 
 ## Custom Extensions
 

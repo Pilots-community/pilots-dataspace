@@ -105,8 +105,8 @@ echo ""
 echo "=== Generating Pre-signed VCs ==="
 
 ISSUER_DID="did:web:did-server%3A9876"
-PROVIDER_DID="did:web:provider-identityhub%3A7093"
-CONSUMER_DID="did:web:consumer-identityhub%3A7083"
+P1_DID="did:web:participant-1-identityhub%3A7093"
+P2_DID="did:web:participant-2-identityhub%3A7083"
 
 generate_vc_file() {
   local SUBJECT_DID="$1"
@@ -156,13 +156,13 @@ with open(sys.argv[6], 'w') as f:
     "$SUBJECT_DID" "$NAME" "$JTI" "$ISSUER_DID" "$OUTPUT"
 }
 
-generate_vc_file "$PROVIDER_DID" "Provider" "urn:uuid:75da308a-ea17-434c-8618-e1aeb0c6fad1" \
-  "${SCRIPT_DIR}/deployment/assets/credentials/provider/membership-credential.json"
-echo "  Created deployment/assets/credentials/provider/membership-credential.json"
+generate_vc_file "$P1_DID" "Participant 1" "urn:uuid:75da308a-ea17-434c-8618-e1aeb0c6fad1" \
+  "${SCRIPT_DIR}/deployment/assets/credentials/participant-1/membership-credential.json"
+echo "  Created deployment/assets/credentials/participant-1/membership-credential.json"
 
-generate_vc_file "$CONSUMER_DID" "Consumer" "urn:uuid:85da308a-ea17-434c-8618-e1aeb0c6fad2" \
-  "${SCRIPT_DIR}/deployment/assets/credentials/consumer/membership-credential.json"
-echo "  Created deployment/assets/credentials/consumer/membership-credential.json"
+generate_vc_file "$P2_DID" "Participant 2" "urn:uuid:85da308a-ea17-434c-8618-e1aeb0c6fad2" \
+  "${SCRIPT_DIR}/deployment/assets/credentials/participant-2/membership-credential.json"
+echo "  Created deployment/assets/credentials/participant-2/membership-credential.json"
 
 echo ""
 echo "=== Done ==="

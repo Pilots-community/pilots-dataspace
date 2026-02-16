@@ -18,14 +18,14 @@
       "_type": "environment",
       "name": "Base Environment",
       "data": {
-        "provider_mgmt": "http://localhost:19193",
-        "consumer_mgmt": "http://localhost:29193",
-        "provider_health": "http://localhost:18181",
-        "consumer_health": "http://localhost:28181",
+        "p1_mgmt": "http://localhost:19193",
+        "p2_mgmt": "http://localhost:29193",
+        "p1_health": "http://localhost:18181",
+        "p2_health": "http://localhost:28181",
         "dataplane_health": "http://localhost:38181",
         "dataplane_public": "http://localhost:38185",
         "api_key": "password",
-        "counterPartyAddress": "http://provider-controlplane:19194/protocol",
+        "counterPartyAddress": "http://participant-1-controlplane:19194/protocol",
         "offer_id": "<REPLACE_WITH_OFFER_ID>",
         "negotiation_id": "<REPLACE_WITH_NEGOTIATION_ID>",
         "agreement_id": "<REPLACE_WITH_AGREEMENT_ID>",
@@ -40,7 +40,7 @@
       "_type": "environment",
       "name": "Docker Compose",
       "data": {
-        "counterPartyAddress": "http://provider-controlplane:19194/protocol"
+        "counterPartyAddress": "http://participant-1-controlplane:19194/protocol"
       },
       "isPrivate": false
     },
@@ -62,37 +62,37 @@
       "description": "Verify that all runtimes are up and running"
     },
     {
-      "_id": "fld_provider_setup",
+      "_id": "fld_p1_setup",
       "parentId": "wrk_pilots_dataspace",
       "_type": "request_group",
-      "name": "2. Provider Setup",
-      "description": "Create asset, policy, and contract definition on the provider"
+      "name": "2. Participant-1 Setup",
+      "description": "Create asset, policy, and contract definition on participant-1"
     },
     {
-      "_id": "fld_consumer_flow",
+      "_id": "fld_p2_flow",
       "parentId": "wrk_pilots_dataspace",
       "_type": "request_group",
-      "name": "3. Consumer Flow",
+      "name": "3. Participant-2 Flow",
       "description": "Discover catalog, negotiate contract, transfer data, and fetch the result"
     },
     {
-      "_id": "req_health_provider_cp",
+      "_id": "req_health_p1_cp",
       "parentId": "fld_health",
       "_type": "request",
-      "name": "Provider Control Plane Health",
+      "name": "Participant-1 Control Plane Health",
       "method": "GET",
-      "url": "{{ _.provider_health }}/api/check/health",
+      "url": "{{ _.p1_health }}/api/check/health",
       "headers": [],
       "body": {},
       "parameters": []
     },
     {
-      "_id": "req_health_consumer_cp",
+      "_id": "req_health_p2_cp",
       "parentId": "fld_health",
       "_type": "request",
-      "name": "Consumer Control Plane Health",
+      "name": "Participant-2 Control Plane Health",
       "method": "GET",
-      "url": "{{ _.consumer_health }}/api/check/health",
+      "url": "{{ _.p2_health }}/api/check/health",
       "headers": [],
       "body": {},
       "parameters": []
@@ -101,7 +101,7 @@
       "_id": "req_health_dataplane",
       "parentId": "fld_health",
       "_type": "request",
-      "name": "Provider Data Plane Health",
+      "name": "Participant-1 Data Plane Health",
       "method": "GET",
       "url": "{{ _.dataplane_health }}/api/check/health",
       "headers": [],
@@ -110,12 +110,12 @@
     },
     {
       "_id": "req_create_asset",
-      "parentId": "fld_provider_setup",
+      "parentId": "fld_p1_setup",
       "_type": "request",
       "name": "Step 1 — Create Asset",
-      "description": "Register a data asset on the provider connector",
+      "description": "Register a data asset on participant-1 connector",
       "method": "POST",
-      "url": "{{ _.provider_mgmt }}/management/v3/assets",
+      "url": "{{ _.p1_mgmt }}/management/v3/assets",
       "headers": [
         { "name": "Content-Type", "value": "application/json" },
         { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
@@ -128,12 +128,12 @@
     },
     {
       "_id": "req_create_policy",
-      "parentId": "fld_provider_setup",
+      "parentId": "fld_p1_setup",
       "_type": "request",
       "name": "Step 2 — Create Policy Definition",
       "description": "Create an open (unrestricted) policy",
       "method": "POST",
-      "url": "{{ _.provider_mgmt }}/management/v3/policydefinitions",
+      "url": "{{ _.p1_mgmt }}/management/v3/policydefinitions",
       "headers": [
         { "name": "Content-Type", "value": "application/json" },
         { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
@@ -146,12 +146,12 @@
     },
     {
       "_id": "req_create_contract_def",
-      "parentId": "fld_provider_setup",
+      "parentId": "fld_p1_setup",
       "_type": "request",
       "name": "Step 3 — Create Contract Definition",
       "description": "Link the asset with the policy via a contract definition",
       "method": "POST",
-      "url": "{{ _.provider_mgmt }}/management/v3/contractdefinitions",
+      "url": "{{ _.p1_mgmt }}/management/v3/contractdefinitions",
       "headers": [
         { "name": "Content-Type", "value": "application/json" },
         { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
@@ -164,12 +164,12 @@
     },
     {
       "_id": "req_catalog_request",
-      "parentId": "fld_consumer_flow",
+      "parentId": "fld_p2_flow",
       "_type": "request",
       "name": "Step 4 — Request Catalog",
-      "description": "Query the provider's catalog from the consumer side. Copy the offer @id from the response for the next step.",
+      "description": "Query participant-1's catalog from the participant-2 side. Copy the offer @id from the response for the next step.",
       "method": "POST",
-      "url": "{{ _.consumer_mgmt }}/management/v3/catalog/request",
+      "url": "{{ _.p2_mgmt }}/management/v3/catalog/request",
       "headers": [
         { "name": "Content-Type", "value": "application/json" },
         { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
@@ -182,12 +182,12 @@
     },
     {
       "_id": "req_negotiate_contract",
-      "parentId": "fld_consumer_flow",
+      "parentId": "fld_p2_flow",
       "_type": "request",
       "name": "Step 5 — Negotiate Contract",
       "description": "Start a contract negotiation. Replace offer_id in the environment with the @id from the catalog response. Save the returned negotiation @id for polling.",
       "method": "POST",
-      "url": "{{ _.consumer_mgmt }}/management/v3/contractnegotiations",
+      "url": "{{ _.p2_mgmt }}/management/v3/contractnegotiations",
       "headers": [
         { "name": "Content-Type", "value": "application/json" },
         { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
@@ -200,12 +200,12 @@
     },
     {
       "_id": "req_poll_negotiation",
-      "parentId": "fld_consumer_flow",
+      "parentId": "fld_p2_flow",
       "_type": "request",
       "name": "Step 5b — Poll Negotiation Status",
       "description": "Poll until the state is FINALIZED. Copy the contractAgreementId into the agreement_id environment variable.",
       "method": "GET",
-      "url": "{{ _.consumer_mgmt }}/management/v3/contractnegotiations/{{ _.negotiation_id }}",
+      "url": "{{ _.p2_mgmt }}/management/v3/contractnegotiations/{{ _.negotiation_id }}",
       "headers": [
         { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
       ],
@@ -214,12 +214,12 @@
     },
     {
       "_id": "req_initiate_transfer",
-      "parentId": "fld_consumer_flow",
+      "parentId": "fld_p2_flow",
       "_type": "request",
       "name": "Step 6 — Initiate Transfer",
       "description": "Start an HTTP PULL transfer. Save the returned @id as transfer_id.",
       "method": "POST",
-      "url": "{{ _.consumer_mgmt }}/management/v3/transferprocesses",
+      "url": "{{ _.p2_mgmt }}/management/v3/transferprocesses",
       "headers": [
         { "name": "Content-Type", "value": "application/json" },
         { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
@@ -232,12 +232,12 @@
     },
     {
       "_id": "req_poll_transfer",
-      "parentId": "fld_consumer_flow",
+      "parentId": "fld_p2_flow",
       "_type": "request",
       "name": "Step 6b — Poll Transfer Status",
       "description": "Poll until the state is STARTED.",
       "method": "GET",
-      "url": "{{ _.consumer_mgmt }}/management/v3/transferprocesses/{{ _.transfer_id }}",
+      "url": "{{ _.p2_mgmt }}/management/v3/transferprocesses/{{ _.transfer_id }}",
       "headers": [
         { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
       ],
@@ -246,12 +246,12 @@
     },
     {
       "_id": "req_get_edr",
-      "parentId": "fld_consumer_flow",
+      "parentId": "fld_p2_flow",
       "_type": "request",
       "name": "Step 7a — Get EDR (Access Token)",
       "description": "Retrieve the Endpoint Data Reference. Copy the authorization token into the edr_token environment variable.",
       "method": "GET",
-      "url": "{{ _.consumer_mgmt }}/management/v3/edrs/{{ _.transfer_id }}/dataaddress",
+      "url": "{{ _.p2_mgmt }}/management/v3/edrs/{{ _.transfer_id }}/dataaddress",
       "headers": [
         { "name": "X-Api-Key", "value": "{{ _.api_key }}" }
       ],
@@ -260,10 +260,10 @@
     },
     {
       "_id": "req_fetch_data",
-      "parentId": "fld_consumer_flow",
+      "parentId": "fld_p2_flow",
       "_type": "request",
       "name": "Step 7b — Fetch Data",
-      "description": "Use the EDR token to fetch the actual data from the provider's data plane.",
+      "description": "Use the EDR token to fetch the actual data from participant-1's data plane.",
       "method": "GET",
       "url": "{{ _.dataplane_public }}/public",
       "headers": [

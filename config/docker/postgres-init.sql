@@ -1,5 +1,5 @@
-CREATE DATABASE consumer_controlplane;
-CREATE DATABASE provider_dataplane;
-CREATE DATABASE provider_identityhub;
-CREATE DATABASE consumer_dataplane;
-CREATE DATABASE consumer_identityhub;
+CREATE DATABASE participant_2_controlplane;
+CREATE DATABASE participant_1_dataplane;
+CREATE DATABASE participant_1_identityhub;
+CREATE DATABASE participant_2_dataplane;
+CREATE DATABASE participant_2_identityhub;

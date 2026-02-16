@@ -9,48 +9,48 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPERUSER_KEY="c3VwZXItdXNlcg==.superuser-token"
 
-PROVIDER_IH_IDENTITY="http://localhost:7092/api/identity"
-CONSUMER_IH_IDENTITY="http://localhost:7082/api/identity"
+P1_IH_IDENTITY="http://localhost:7092/api/identity"
+P2_IH_IDENTITY="http://localhost:7082/api/identity"
 
-PROVIDER_IH_DID_PORT=7093
-CONSUMER_IH_DID_PORT=7083
+P1_IH_DID_PORT=7093
+P2_IH_DID_PORT=7083
 
-PROVIDER_DID="did:web:provider-identityhub%3A${PROVIDER_IH_DID_PORT}"
-CONSUMER_DID="did:web:consumer-identityhub%3A${CONSUMER_IH_DID_PORT}"
+P1_DID="did:web:participant-1-identityhub%3A${P1_IH_DID_PORT}"
+P2_DID="did:web:participant-2-identityhub%3A${P2_IH_DID_PORT}"
 
 # Management API endpoints (for storing STS client secrets)
-PROVIDER_MGMT="http://localhost:19193/management"
-CONSUMER_MGMT="http://localhost:29193/management"
+P1_MGMT="http://localhost:19193/management"
+P2_MGMT="http://localhost:29193/management"
 
-PROVIDER_VC_JWT=$(jq -r '.credential' "${SCRIPT_DIR}/assets/credentials/provider/membership-credential.json")
-CONSUMER_VC_JWT=$(jq -r '.credential' "${SCRIPT_DIR}/assets/credentials/consumer/membership-credential.json")
+P1_VC_JWT=$(jq -r '.credential' "${SCRIPT_DIR}/assets/credentials/participant-1/membership-credential.json")
+P2_VC_JWT=$(jq -r '.credential' "${SCRIPT_DIR}/assets/credentials/participant-2/membership-credential.json")
 
 # Base64-encoded participant IDs for API URL paths
-PROVIDER_DID_B64=$(echo -n "${PROVIDER_DID}" | base64)
-CONSUMER_DID_B64=$(echo -n "${CONSUMER_DID}" | base64)
+P1_DID_B64=$(echo -n "${P1_DID}" | base64)
+P2_DID_B64=$(echo -n "${P2_DID}" | base64)
 
 # DSP protocol endpoints (used for DID document service entries)
-PROVIDER_DSP="http://provider-controlplane:19194/protocol"
-CONSUMER_DSP="http://consumer-controlplane:29194/protocol"
+P1_DSP="http://participant-1-controlplane:19194/protocol"
+P2_DSP="http://participant-2-controlplane:29194/protocol"
 
 # CredentialService endpoints (IdentityHub credentials API with base64-encoded DID)
-PROVIDER_CREDENTIAL_SVC="http://provider-identityhub:7091/api/credentials/v1/participants/${PROVIDER_DID_B64}"
-CONSUMER_CREDENTIAL_SVC="http://consumer-identityhub:7081/api/credentials/v1/participants/${CONSUMER_DID_B64}"
+P1_CREDENTIAL_SVC="http://participant-1-identityhub:7091/api/credentials/v1/participants/${P1_DID_B64}"
+P2_CREDENTIAL_SVC="http://participant-2-identityhub:7081/api/credentials/v1/participants/${P2_DID_B64}"
 
-echo "=== Seeding Provider IdentityHub ==="
+echo "=== Seeding Participant-1 IdentityHub ==="
 
-# Create provider participant context
-echo "Creating provider participant context..."
-PROVIDER_RESULT=$(curl -s -w "\n%{http_code}" -X POST "${PROVIDER_IH_IDENTITY}/v1alpha/participants" \
+# Create participant-1 participant context
+echo "Creating participant-1 participant context..."
+P1_RESULT=$(curl -s -w "\n%{http_code}" -X POST "${P1_IH_IDENTITY}/v1alpha/participants" \
   -H "Content-Type: application/json" \
   -H "x-api-key: ${SUPERUSER_KEY}" \
   -d "{
-    \"participantContextId\": \"${PROVIDER_DID}\",
-    \"did\": \"${PROVIDER_DID}\",
+    \"participantContextId\": \"${P1_DID}\",
+    \"did\": \"${P1_DID}\",
     \"active\": true,
     \"key\": {
-      \"keyId\": \"${PROVIDER_DID}#key-1\",
-      \"privateKeyAlias\": \"${PROVIDER_DID}-alias\",
+      \"keyId\": \"${P1_DID}#key-1\",
+      \"privateKeyAlias\": \"${P1_DID}-alias\",
       \"keyGeneratorParams\": {
         \"algorithm\": \"EdDSA\",
         \"curve\": \"Ed25519\"
@@ -59,46 +59,46 @@ PROVIDER_RESULT=$(curl -s -w "\n%{http_code}" -X POST "${PROVIDER_IH_IDENTITY}/v
     \"serviceEndpoints\": [
       {
         \"type\": \"CredentialService\",
-        \"serviceEndpoint\": \"${PROVIDER_CREDENTIAL_SVC}\",
-        \"id\": \"provider-credentialservice-1\"
+        \"serviceEndpoint\": \"${P1_CREDENTIAL_SVC}\",
+        \"id\": \"participant-1-credentialservice-1\"
       },
       {
         \"type\": \"ProtocolEndpoint\",
-        \"serviceEndpoint\": \"${PROVIDER_DSP}\",
-        \"id\": \"provider-dsp\"
+        \"serviceEndpoint\": \"${P1_DSP}\",
+        \"id\": \"participant-1-dsp\"
       }
     ],
     \"roles\": []
   }")
 
-PROVIDER_HTTP_CODE=$(echo "$PROVIDER_RESULT" | tail -1)
-PROVIDER_BODY=$(echo "$PROVIDER_RESULT" | sed '$d')
-echo "  HTTP ${PROVIDER_HTTP_CODE}: ${PROVIDER_BODY}"
+P1_HTTP_CODE=$(echo "$P1_RESULT" | tail -1)
+P1_BODY=$(echo "$P1_RESULT" | sed '$d')
+echo "  HTTP ${P1_HTTP_CODE}: ${P1_BODY}"
 
-# Extract the provider API key and STS client secret for later use
-if [ "$PROVIDER_HTTP_CODE" = "200" ] || [ "$PROVIDER_HTTP_CODE" = "201" ] || [ "$PROVIDER_HTTP_CODE" = "204" ]; then
-  PROVIDER_API_KEY=$(echo "$PROVIDER_BODY" | jq -r '.apiKey // empty' 2>/dev/null || echo "")
-  PROVIDER_CLIENT_SECRET=$(echo "$PROVIDER_BODY" | jq -r '.clientSecret // empty' 2>/dev/null || echo "")
-  if [ -n "$PROVIDER_API_KEY" ]; then
-    echo "  Provider API Key: ${PROVIDER_API_KEY}"
+# Extract the participant-1 API key and STS client secret for later use
+if [ "$P1_HTTP_CODE" = "200" ] || [ "$P1_HTTP_CODE" = "201" ] || [ "$P1_HTTP_CODE" = "204" ]; then
+  P1_API_KEY=$(echo "$P1_BODY" | jq -r '.apiKey // empty' 2>/dev/null || echo "")
+  P1_CLIENT_SECRET=$(echo "$P1_BODY" | jq -r '.clientSecret // empty' 2>/dev/null || echo "")
+  if [ -n "$P1_API_KEY" ]; then
+    echo "  Participant-1 API Key: ${P1_API_KEY}"
   fi
 fi
 
 echo ""
-echo "=== Seeding Consumer IdentityHub ==="
+echo "=== Seeding Participant-2 IdentityHub ==="
 
-# Create consumer participant context
-echo "Creating consumer participant context..."
-CONSUMER_RESULT=$(curl -s -w "\n%{http_code}" -X POST "${CONSUMER_IH_IDENTITY}/v1alpha/participants" \
+# Create participant-2 participant context
+echo "Creating participant-2 participant context..."
+P2_RESULT=$(curl -s -w "\n%{http_code}" -X POST "${P2_IH_IDENTITY}/v1alpha/participants" \
   -H "Content-Type: application/json" \
   -H "x-api-key: ${SUPERUSER_KEY}" \
   -d "{
-    \"participantContextId\": \"${CONSUMER_DID}\",
-    \"did\": \"${CONSUMER_DID}\",
+    \"participantContextId\": \"${P2_DID}\",
+    \"did\": \"${P2_DID}\",
     \"active\": true,
     \"key\": {
-      \"keyId\": \"${CONSUMER_DID}#key-1\",
-      \"privateKeyAlias\": \"${CONSUMER_DID}-alias\",
+      \"keyId\": \"${P2_DID}#key-1\",
+      \"privateKeyAlias\": \"${P2_DID}-alias\",
       \"keyGeneratorParams\": {
         \"algorithm\": \"EdDSA\",
         \"curve\": \"Ed25519\"
@@ -107,27 +107,27 @@ CONSUMER_RESULT=$(curl -s -w "\n%{http_code}" -X POST "${CONSUMER_IH_IDENTITY}/v
     \"serviceEndpoints\": [
       {
         \"type\": \"CredentialService\",
-        \"serviceEndpoint\": \"${CONSUMER_CREDENTIAL_SVC}\",
-        \"id\": \"consumer-credentialservice-1\"
+        \"serviceEndpoint\": \"${P2_CREDENTIAL_SVC}\",
+        \"id\": \"participant-2-credentialservice-1\"
       },
       {
         \"type\": \"ProtocolEndpoint\",
-        \"serviceEndpoint\": \"${CONSUMER_DSP}\",
-        \"id\": \"consumer-dsp\"
+        \"serviceEndpoint\": \"${P2_DSP}\",
+        \"id\": \"participant-2-dsp\"
       }
     ],
     \"roles\": []
   }")
 
-CONSUMER_HTTP_CODE=$(echo "$CONSUMER_RESULT" | tail -1)
-CONSUMER_BODY=$(echo "$CONSUMER_RESULT" | sed '$d')
-echo "  HTTP ${CONSUMER_HTTP_CODE}: ${CONSUMER_BODY}"
+P2_HTTP_CODE=$(echo "$P2_RESULT" | tail -1)
+P2_BODY=$(echo "$P2_RESULT" | sed '$d')
+echo "  HTTP ${P2_HTTP_CODE}: ${P2_BODY}"
 
-if [ "$CONSUMER_HTTP_CODE" = "200" ] || [ "$CONSUMER_HTTP_CODE" = "201" ] || [ "$CONSUMER_HTTP_CODE" = "204" ]; then
-  CONSUMER_API_KEY=$(echo "$CONSUMER_BODY" | jq -r '.apiKey // empty' 2>/dev/null || echo "")
-  CONSUMER_CLIENT_SECRET=$(echo "$CONSUMER_BODY" | jq -r '.clientSecret // empty' 2>/dev/null || echo "")
-  if [ -n "$CONSUMER_API_KEY" ]; then
-    echo "  Consumer API Key: ${CONSUMER_API_KEY}"
+if [ "$P2_HTTP_CODE" = "200" ] || [ "$P2_HTTP_CODE" = "201" ] || [ "$P2_HTTP_CODE" = "204" ]; then
+  P2_API_KEY=$(echo "$P2_BODY" | jq -r '.apiKey // empty' 2>/dev/null || echo "")
+  P2_CLIENT_SECRET=$(echo "$P2_BODY" | jq -r '.clientSecret // empty' 2>/dev/null || echo "")
+  if [ -n "$P2_API_KEY" ]; then
+    echo "  Participant-2 API Key: ${P2_API_KEY}"
   fi
 fi
 
@@ -136,29 +136,29 @@ echo "=== Activating Participant Contexts ==="
 
 # Participant contexts start in CREATED state. We must activate them before
 # DID publishing or STS authentication will work.
-echo "Activating provider participant context..."
-curl -s -w " HTTP %{http_code}" -X POST "${PROVIDER_IH_IDENTITY}/v1alpha/participants/${PROVIDER_DID_B64}/state?isActive=true" \
+echo "Activating participant-1 participant context..."
+curl -s -w " HTTP %{http_code}" -X POST "${P1_IH_IDENTITY}/v1alpha/participants/${P1_DID_B64}/state?isActive=true" \
   -H "x-api-key: ${SUPERUSER_KEY}" && echo "" || echo " FAILED"
 
-echo "Activating consumer participant context..."
-curl -s -w " HTTP %{http_code}" -X POST "${CONSUMER_IH_IDENTITY}/v1alpha/participants/${CONSUMER_DID_B64}/state?isActive=true" \
+echo "Activating participant-2 participant context..."
+curl -s -w " HTTP %{http_code}" -X POST "${P2_IH_IDENTITY}/v1alpha/participants/${P2_DID_B64}/state?isActive=true" \
   -H "x-api-key: ${SUPERUSER_KEY}" && echo "" || echo " FAILED"
 
 echo ""
 echo "=== Publishing DID Documents ==="
 
 # Publish DIDs so they're resolvable via did:web
-echo "Publishing provider DID..."
-curl -s -w " HTTP %{http_code}" -X POST "${PROVIDER_IH_IDENTITY}/v1alpha/participants/${PROVIDER_DID_B64}/dids/publish" \
+echo "Publishing participant-1 DID..."
+curl -s -w " HTTP %{http_code}" -X POST "${P1_IH_IDENTITY}/v1alpha/participants/${P1_DID_B64}/dids/publish" \
   -H "Content-Type: application/json" \
   -H "x-api-key: ${SUPERUSER_KEY}" \
-  -d "{\"did\": \"${PROVIDER_DID}\"}" && echo "" || echo " FAILED"
+  -d "{\"did\": \"${P1_DID}\"}" && echo "" || echo " FAILED"
 
-echo "Publishing consumer DID..."
-curl -s -w " HTTP %{http_code}" -X POST "${CONSUMER_IH_IDENTITY}/v1alpha/participants/${CONSUMER_DID_B64}/dids/publish" \
+echo "Publishing participant-2 DID..."
+curl -s -w " HTTP %{http_code}" -X POST "${P2_IH_IDENTITY}/v1alpha/participants/${P2_DID_B64}/dids/publish" \
   -H "Content-Type: application/json" \
   -H "x-api-key: ${SUPERUSER_KEY}" \
-  -d "{\"did\": \"${CONSUMER_DID}\"}" && echo "" || echo " FAILED"
+  -d "{\"did\": \"${P2_DID}\"}" && echo "" || echo " FAILED"
 
 echo ""
 echo "=== Storing STS Client Secrets ==="
@@ -210,13 +210,13 @@ store_or_update_secret() {
   fi
 }
 
-# Store the STS client secret in the provider connector vault
-echo "Storing STS client secret in provider connector..."
-store_or_update_secret "${PROVIDER_MGMT}" "${PROVIDER_DID}-sts-client-secret" "${PROVIDER_CLIENT_SECRET}"
+# Store the STS client secret in the participant-1 connector vault
+echo "Storing STS client secret in participant-1 connector..."
+store_or_update_secret "${P1_MGMT}" "${P1_DID}-sts-client-secret" "${P1_CLIENT_SECRET}"
 
-# Store the STS client secret in the consumer connector vault
-echo "Storing STS client secret in consumer connector..."
-store_or_update_secret "${CONSUMER_MGMT}" "${CONSUMER_DID}-sts-client-secret" "${CONSUMER_CLIENT_SECRET}"
+# Store the STS client secret in the participant-2 connector vault
+echo "Storing STS client secret in participant-2 connector..."
+store_or_update_secret "${P2_MGMT}" "${P2_DID}-sts-client-secret" "${P2_CLIENT_SECRET}"
 
 echo ""
 echo "=== Storing Membership Credentials ==="
@@ -269,13 +269,13 @@ print(json.dumps(manifest))
     -d @/tmp/vc-manifest.json
 }
 
-# Store provider's VC
-echo "Storing provider MembershipCredential..."
-store_credential "${PROVIDER_IH_IDENTITY}" "${PROVIDER_DID}" "${PROVIDER_DID_B64}" "${PROVIDER_VC_JWT}" && echo " OK" || echo " FAILED"
+# Store participant-1's VC
+echo "Storing participant-1 MembershipCredential..."
+store_credential "${P1_IH_IDENTITY}" "${P1_DID}" "${P1_DID_B64}" "${P1_VC_JWT}" && echo " OK" || echo " FAILED"
 
-# Store consumer's VC
-echo "Storing consumer MembershipCredential..."
-store_credential "${CONSUMER_IH_IDENTITY}" "${CONSUMER_DID}" "${CONSUMER_DID_B64}" "${CONSUMER_VC_JWT}" && echo " OK" || echo " FAILED"
+# Store participant-2's VC
+echo "Storing participant-2 MembershipCredential..."
+store_credential "${P2_IH_IDENTITY}" "${P2_DID}" "${P2_DID_B64}" "${P2_VC_JWT}" && echo " OK" || echo " FAILED"
 
 echo ""
 echo "=== Seeding Complete ==="

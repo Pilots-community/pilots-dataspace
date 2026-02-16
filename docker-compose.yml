@@ -6,14 +6,14 @@ services:
     environment:
       POSTGRES_USER: edc
       POSTGRES_PASSWORD: edc
-      POSTGRES_DB: provider_controlplane
+      POSTGRES_DB: participant_1_controlplane
     ports:
       - "15432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./config/docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U edc -d provider_controlplane"]
+      test: ["CMD-SHELL", "pg_isready -U edc -d participant_1_controlplane"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -49,12 +49,12 @@ services:
       timeout: 5s
       retries: 10
 
-  provider-identityhub:
+  participant-1-identityhub:
     image: identityhub:latest
-    container_name: provider-identityhub
+    container_name: participant-1-identityhub
     command: >
       sh -c "exec java -Djava.security.egd=file:/dev/urandom
-      -Dedc.fs.config=/app/config/identityhub-provider.properties
+      -Dedc.fs.config=/app/config/identityhub-participant-1.properties
       -jar identityhub.jar"
     ports:
       - "7090:7090"
@@ -64,7 +64,7 @@ services:
       - "7095:7095"
       - "7096:7096"
     volumes:
-      - ./config/docker/identityhub-provider.properties:/app/config/identityhub-provider.properties:ro
+      - ./config/docker/identityhub-participant-1.properties:/app/config/identityhub-participant-1.properties:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,12 +76,12 @@ services:
       timeout: 5s
       retries: 10
 
-  consumer-identityhub:
+  participant-2-identityhub:
     image: identityhub:latest
-    container_name: consumer-identityhub
+    container_name: participant-2-identityhub
     command: >
       sh -c "exec java -Djava.security.egd=file:/dev/urandom
-      -Dedc.fs.config=/app/config/identityhub-consumer.properties
+      -Dedc.fs.config=/app/config/identityhub-participant-2.properties
       -jar identityhub.jar"
     ports:
       - "7080:7080"
@@ -91,7 +91,7 @@ services:
       - "7085:7085"
       - "7086:7086"
     volumes:
-      - ./config/docker/identityhub-consumer.properties:/app/config/identityhub-consumer.properties:ro
+      - ./config/docker/identityhub-participant-2.properties:/app/config/identityhub-participant-2.properties:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,13 +103,13 @@ services:
       timeout: 5s
       retries: 10
 
-  provider-controlplane:
+  participant-1-controlplane:
     image: controlplane:latest
-    container_name: provider-controlplane
+    container_name: participant-1-controlplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
       exec java -Djava.security.egd=file:/dev/urandom
-      -Dedc.fs.config=/app/config/controlplane-provider.properties
+      -Dedc.fs.config=/app/config/controlplane-participant-1.properties
       -jar edc-controlplane.jar"
     ports:
       - "18181:18181"
@@ -117,13 +117,13 @@ services:
       - "19193:19193"
       - "19194:19194"
     volumes:
-      - ./config/docker/controlplane-provider.properties:/app/config/controlplane-provider.properties:ro
+      - ./config/docker/controlplane-participant-1.properties:/app/config/controlplane-participant-1.properties:ro
     depends_on:
       postgres:
         condition: service_healthy
       vault:
         condition: service_healthy
-      provider-identityhub:
+      participant-1-identityhub:
         condition: service_healthy
       did-server:
         condition: service_healthy
@@ -133,13 +133,13 @@ services:
       timeout: 5s
       retries: 10
 
-  consumer-controlplane:
+  participant-2-controlplane:
     image: controlplane:latest
-    container_name: consumer-controlplane
+    container_name: participant-2-controlplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
       exec java -Djava.security.egd=file:/dev/urandom
-      -Dedc.fs.config=/app/config/controlplane-consumer.properties
+      -Dedc.fs.config=/app/config/controlplane-participant-2.properties
       -jar edc-controlplane.jar"
     ports:
       - "28181:28181"
@@ -147,13 +147,13 @@ services:
       - "29193:29193"
       - "29194:29194"
     volumes:
-      - ./config/docker/controlplane-consumer.properties:/app/config/controlplane-consumer.properties:ro
+      - ./config/docker/controlplane-participant-2.properties:/app/config/controlplane-participant-2.properties:ro
     depends_on:
       postgres:
         condition: service_healthy
       vault:
         condition: service_healthy
-      consumer-identityhub:
+      participant-2-identityhub:
         condition: service_healthy
       did-server:
         condition: service_healthy
@@ -163,27 +163,27 @@ services:
       timeout: 5s
       retries: 10
 
-  provider-dataplane:
+  participant-1-dataplane:
     image: dataplane:latest
-    container_name: provider-dataplane
+    container_name: participant-1-dataplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
       exec java -Djava.security.egd=file:/dev/urandom
-      -Dedc.fs.config=/app/config/dataplane.properties
+      -Dedc.fs.config=/app/config/dataplane-participant-1.properties
       -jar edc-dataplane.jar"
     ports:
       - "38181:38181"
       - "38182:38182"
       - "38185:38185"
     volumes:
-      - ./config/docker/dataplane.properties:/app/config/dataplane.properties:ro
+      - ./config/docker/dataplane-participant-1.properties:/app/config/dataplane-participant-1.properties:ro
       - ./config/certs:/app/certs:ro
     depends_on:
       postgres:
         condition: service_healthy
       vault:
         condition: service_healthy
-      provider-controlplane:
+      participant-1-controlplane:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:38181/api/check/health"]
@@ -191,27 +191,27 @@ services:
       timeout: 5s
       retries: 10
 
-  consumer-dataplane:
+  participant-2-dataplane:
     image: dataplane:latest
-    container_name: consumer-dataplane
+    container_name: participant-2-dataplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
       exec java -Djava.security.egd=file:/dev/urandom
-      -Dedc.fs.config=/app/config/dataplane-consumer.properties
+      -Dedc.fs.config=/app/config/dataplane-participant-2.properties
       -jar edc-dataplane.jar"
     ports:
       - "48181:48181"
       - "48182:48182"
       - "48185:48185"
     volumes:
-      - ./config/docker/dataplane-consumer.properties:/app/config/dataplane-consumer.properties:ro
+      - ./config/docker/dataplane-participant-2.properties:/app/config/dataplane-participant-2.properties:ro
       - ./config/certs:/app/certs:ro
     depends_on:
       postgres:
         condition: service_healthy
       vault:
         condition: service_healthy
-      consumer-controlplane:
+      participant-2-controlplane:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:48181/api/check/health"]

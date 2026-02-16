@@ -3,11 +3,11 @@ set -euo pipefail
 
 # End-to-end test for the Pilots Dataspace.
 # Tests bidirectional data sharing:
-#   Steps 1-10:  Forward direction — provider owns data, consumer requests it
+#   Steps 1-10:  Forward direction — participant-1 owns data, participant-2 requests it
 #                (pull transfer via EDR + push transfer to HTTP receiver)
-#   Steps 11-17: Reverse direction — consumer owns data, provider requests it
-#                (pull transfer via EDR from consumer data plane)
-#   Steps 18-20: Reverse push transfer — provider pushes consumer's data to HTTP receiver
+#   Steps 11-17: Reverse direction — participant-2 owns data, participant-1 requests it
+#                (pull transfer via EDR from participant-2 data plane)
+#   Steps 18-20: Reverse push transfer — participant-1 pushes participant-2's data to HTTP receiver
 #
 # Prerequisites: All services must be running and seeded (./start.sh or ./setup.sh).
 #
@@ -16,18 +16,18 @@ set -euo pipefail
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
-PROVIDER_MGMT="http://localhost:19193/management"
-CONSUMER_MGMT="http://localhost:29193/management"
-DATA_PLANE_PUBLIC="http://localhost:38185/public"
+P1_MGMT="http://localhost:19193/management"
+P2_MGMT="http://localhost:29193/management"
+P1_DATA_PLANE_PUBLIC="http://localhost:38185/public"
 HTTP_RECEIVER="http://localhost:4000"
 API_KEY="password"
 
 # Docker Compose env vars (container-to-container addresses)
-PROVIDER_DSP="http://provider-controlplane:19194/protocol"
-PROVIDER_DID="did:web:provider-identityhub%3A7093"
-CONSUMER_DSP="http://consumer-controlplane:29194/protocol"
-CONSUMER_DID="did:web:consumer-identityhub%3A7083"
-CONSUMER_DATA_PLANE_PUBLIC="http://localhost:48185/public"
+P1_DSP="http://participant-1-controlplane:19194/protocol"
+P1_DID="did:web:participant-1-identityhub%3A7093"
+P2_DSP="http://participant-2-controlplane:29194/protocol"
+P2_DID="did:web:participant-2-identityhub%3A7083"
+P2_DATA_PLANE_PUBLIC="http://localhost:48185/public"
 
 POLL_INTERVAL=2
 POLL_TIMEOUT=30
@@ -86,7 +86,7 @@ poll_state() {
 
 echo "=== Step 1: Create Asset ==="
 
-ASSET_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${PROVIDER_MGMT}/v3/assets" \
+ASSET_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${P1_MGMT}/v3/assets" \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: $API_KEY" \
   -d '{
@@ -111,7 +111,7 @@ http_is_ok "$ASSET_HTTP" "200" "409" && rc=0 || rc=1; assert_ok "Create asset re
 echo ""
 echo "=== Step 2: Create Policy ==="
 
-POLICY_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${PROVIDER_MGMT}/v3/policydefinitions" \
+POLICY_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${P1_MGMT}/v3/policydefinitions" \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: $API_KEY" \
   -d '{
@@ -137,7 +137,7 @@ http_is_ok "$POLICY_HTTP" "200" "409" && rc=0 || rc=1; assert_ok "Create policy 
 echo ""
 echo "=== Step 3: Create Contract Definition ==="
 
-CONTRACTDEF_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${PROVIDER_MGMT}/v3/contractdefinitions" \
+CONTRACTDEF_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${P1_MGMT}/v3/contractdefinitions" \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: $API_KEY" \
   -d '{
@@ -156,13 +156,13 @@ http_is_ok "$CONTRACTDEF_HTTP" "200" "409" && rc=0 || rc=1; assert_ok "Create co
 echo ""
 echo "=== Step 4: Request Catalog ==="
 
-CATALOG_RESPONSE=$(curl -s -X POST "${CONSUMER_MGMT}/v3/catalog/request" \
+CATALOG_RESPONSE=$(curl -s -X POST "${P2_MGMT}/v3/catalog/request" \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: $API_KEY" \
   -d "{
     \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-    \"counterPartyAddress\": \"${PROVIDER_DSP}\",
-    \"counterPartyId\": \"${PROVIDER_DID}\",
+    \"counterPartyAddress\": \"${P1_DSP}\",
+    \"counterPartyId\": \"${P1_DID}\",
     \"protocol\": \"dataspace-protocol-http\"
   }")
 
@@ -179,19 +179,19 @@ echo "  Offer ID: ${OFFER_ID:-<empty>}"
 echo ""
 echo "=== Step 5: Negotiate Contract ==="
 
-NEGOTIATION_ID=$(curl -s -X POST "${CONSUMER_MGMT}/v3/contractnegotiations" \
+NEGOTIATION_ID=$(curl -s -X POST "${P2_MGMT}/v3/contractnegotiations" \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: $API_KEY" \
   -d "{
     \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-    \"counterPartyAddress\": \"${PROVIDER_DSP}\",
-    \"counterPartyId\": \"${PROVIDER_DID}\",
+    \"counterPartyAddress\": \"${P1_DSP}\",
+    \"counterPartyId\": \"${P1_DID}\",
     \"protocol\": \"dataspace-protocol-http\",
     \"policy\": {
       \"@context\": \"http://www.w3.org/ns/odrl.jsonld\",
       \"@id\": \"${OFFER_ID}\",
       \"@type\": \"Offer\",
-      \"assigner\": \"${PROVIDER_DID}\",
+      \"assigner\": \"${P1_DID}\",
       \"target\": \"sample-asset-1\",
       \"permission\": [],
       \"prohibition\": [],
@@ -202,8 +202,8 @@ NEGOTIATION_ID=$(curl -s -X POST "${CONSUMER_MGMT}/v3/contractnegotiations" \
 echo "  Negotiation ID: ${NEGOTIATION_ID}"
 echo "  Polling for FINALIZED state..."
 
-if poll_state "${CONSUMER_MGMT}/v3/contractnegotiations/${NEGOTIATION_ID}" "FINALIZED" "$POLL_TIMEOUT"; then
-  AGREEMENT_ID=$(curl -s "${CONSUMER_MGMT}/v3/contractnegotiations/${NEGOTIATION_ID}" \
+if poll_state "${P2_MGMT}/v3/contractnegotiations/${NEGOTIATION_ID}" "FINALIZED" "$POLL_TIMEOUT"; then
+  AGREEMENT_ID=$(curl -s "${P2_MGMT}/v3/contractnegotiations/${NEGOTIATION_ID}" \
     -H "X-Api-Key: $API_KEY" | jq -r '.contractAgreementId // empty')
   echo "  Agreement ID: ${AGREEMENT_ID:-<empty>}"
   [ -n "$AGREEMENT_ID" ] && rc=0 || rc=1; assert_ok "Negotiation reaches FINALIZED with non-empty agreement ID" $rc
@@ -222,13 +222,13 @@ if [ -z "$AGREEMENT_ID" ]; then
   FAILED=$((FAILED + 1))
   FAILURES+=("Transfer skipped — no agreement ID")
 else
-  TRANSFER_ID=$(curl -s -X POST "${CONSUMER_MGMT}/v3/transferprocesses" \
+  TRANSFER_ID=$(curl -s -X POST "${P2_MGMT}/v3/transferprocesses" \
     -H "Content-Type: application/json" \
     -H "X-Api-Key: $API_KEY" \
     -d "{
       \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-      \"counterPartyAddress\": \"${PROVIDER_DSP}\",
-      \"counterPartyId\": \"${PROVIDER_DID}\",
+      \"counterPartyAddress\": \"${P1_DSP}\",
+      \"counterPartyId\": \"${P1_DID}\",
       \"protocol\": \"dataspace-protocol-http\",
       \"contractId\": \"${AGREEMENT_ID}\",
       \"assetId\": \"sample-asset-1\",
@@ -238,7 +238,7 @@ else
   echo "  Transfer ID: ${TRANSFER_ID}"
   echo "  Polling for STARTED state..."
 
-  if poll_state "${CONSUMER_MGMT}/v3/transferprocesses/${TRANSFER_ID}" "STARTED" "$POLL_TIMEOUT"; then
+  if poll_state "${P2_MGMT}/v3/transferprocesses/${TRANSFER_ID}" "STARTED" "$POLL_TIMEOUT"; then
     assert_ok "Transfer reaches STARTED" 0
   else
     assert_ok "Transfer reaches STARTED within ${POLL_TIMEOUT}s" 1
@@ -255,14 +255,14 @@ if [ -z "${TRANSFER_ID:-}" ]; then
   FAILED=$((FAILED + 1))
   FAILURES+=("EDR fetch skipped — no transfer ID")
 else
-  TOKEN=$(curl -s "${CONSUMER_MGMT}/v3/edrs/${TRANSFER_ID}/dataaddress" \
+  TOKEN=$(curl -s "${P2_MGMT}/v3/edrs/${TRANSFER_ID}/dataaddress" \
     -H "X-Api-Key: $API_KEY" | jq -r '.authorization // empty')
 
   if [ -z "$TOKEN" ]; then
     echo "  Failed to retrieve EDR token"
     assert_ok "EDR token is non-empty" 1
   else
-    DATA_HTTP=$(curl -s -o /tmp/e2e-data-response.json -w "%{http_code}" "$DATA_PLANE_PUBLIC" \
+    DATA_HTTP=$(curl -s -o /tmp/e2e-data-response.json -w "%{http_code}" "$P1_DATA_PLANE_PUBLIC" \
       -H "Authorization: Bearer $TOKEN")
     echo "  HTTP $DATA_HTTP"
 
@@ -295,13 +295,13 @@ if [ -z "${AGREEMENT_ID:-}" ]; then
   FAILURES+=("Push transfer skipped — no agreement ID")
   PUSH_TRANSFER_ID=""
 else
-  PUSH_TRANSFER_ID=$(curl -s -X POST "${CONSUMER_MGMT}/v3/transferprocesses" \
+  PUSH_TRANSFER_ID=$(curl -s -X POST "${P2_MGMT}/v3/transferprocesses" \
     -H "Content-Type: application/json" \
     -H "X-Api-Key: $API_KEY" \
     -d "{
       \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-      \"counterPartyAddress\": \"${PROVIDER_DSP}\",
-      \"counterPartyId\": \"${PROVIDER_DID}\",
+      \"counterPartyAddress\": \"${P1_DSP}\",
+      \"counterPartyId\": \"${P1_DID}\",
       \"protocol\": \"dataspace-protocol-http\",
       \"contractId\": \"${AGREEMENT_ID}\",
       \"assetId\": \"sample-asset-1\",
@@ -327,7 +327,7 @@ if [ -z "${PUSH_TRANSFER_ID:-}" ]; then
   FAILURES+=("Push transfer poll skipped — no transfer ID")
 else
   echo "  Polling for COMPLETED state..."
-  if poll_state "${CONSUMER_MGMT}/v3/transferprocesses/${PUSH_TRANSFER_ID}" "COMPLETED" "$POLL_TIMEOUT"; then
+  if poll_state "${P2_MGMT}/v3/transferprocesses/${PUSH_TRANSFER_ID}" "COMPLETED" "$POLL_TIMEOUT"; then
     assert_ok "Push transfer reaches COMPLETED" 0
   else
     assert_ok "Push transfer reaches COMPLETED within ${POLL_TIMEOUT}s" 1
@@ -368,15 +368,15 @@ fi
 echo ""
 echo "=== Step 11: Create Asset on Consumer (reverse) ==="
 
-REVERSE_ASSET_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${CONSUMER_MGMT}/v3/assets" \
+REVERSE_ASSET_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${P2_MGMT}/v3/assets" \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: $API_KEY" \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "@id": "reverse-asset-1",
     "properties": {
-      "name": "Consumer Data Asset",
-      "description": "A dataset owned by the consumer for reverse testing",
+      "name": "Participant-2 Data Asset",
+      "description": "A dataset owned by participant-2 for reverse testing",
       "contenttype": "application/json"
     },
     "dataAddress": {
@@ -393,7 +393,7 @@ http_is_ok "$REVERSE_ASSET_HTTP" "200" "409" && rc=0 || rc=1; assert_ok "Create 
 echo ""
 echo "=== Step 12: Create Policy on Consumer (reverse) ==="
 
-REVERSE_POLICY_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${CONSUMER_MGMT}/v3/policydefinitions" \
+REVERSE_POLICY_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${P2_MGMT}/v3/policydefinitions" \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: $API_KEY" \
   -d '{
@@ -419,7 +419,7 @@ http_is_ok "$REVERSE_POLICY_HTTP" "200" "409" && rc=0 || rc=1; assert_ok "Create
 echo ""
 echo "=== Step 13: Create Contract Definition on Consumer (reverse) ==="
 
-REVERSE_CONTRACTDEF_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${CONSUMER_MGMT}/v3/contractdefinitions" \
+REVERSE_CONTRACTDEF_HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${P2_MGMT}/v3/contractdefinitions" \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: $API_KEY" \
   -d '{
@@ -438,13 +438,13 @@ http_is_ok "$REVERSE_CONTRACTDEF_HTTP" "200" "409" && rc=0 || rc=1; assert_ok "C
 echo ""
 echo "=== Step 14: Provider Requests Consumer's Catalog (reverse) ==="
 
-REVERSE_CATALOG_RESPONSE=$(curl -s -X POST "${PROVIDER_MGMT}/v3/catalog/request" \
+REVERSE_CATALOG_RESPONSE=$(curl -s -X POST "${P1_MGMT}/v3/catalog/request" \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: $API_KEY" \
   -d "{
     \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-    \"counterPartyAddress\": \"${CONSUMER_DSP}\",
-    \"counterPartyId\": \"${CONSUMER_DID}\",
+    \"counterPartyAddress\": \"${P2_DSP}\",
+    \"counterPartyId\": \"${P2_DID}\",
     \"protocol\": \"dataspace-protocol-http\"
   }")
 
@@ -467,19 +467,19 @@ if [ -z "${REVERSE_OFFER_ID:-}" ]; then
   FAILURES+=("Reverse negotiation skipped — no offer ID")
   REVERSE_AGREEMENT_ID=""
 else
-  REVERSE_NEGOTIATION_ID=$(curl -s -X POST "${PROVIDER_MGMT}/v3/contractnegotiations" \
+  REVERSE_NEGOTIATION_ID=$(curl -s -X POST "${P1_MGMT}/v3/contractnegotiations" \
     -H "Content-Type: application/json" \
     -H "X-Api-Key: $API_KEY" \
     -d "{
       \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-      \"counterPartyAddress\": \"${CONSUMER_DSP}\",
-      \"counterPartyId\": \"${CONSUMER_DID}\",
+      \"counterPartyAddress\": \"${P2_DSP}\",
+      \"counterPartyId\": \"${P2_DID}\",
       \"protocol\": \"dataspace-protocol-http\",
       \"policy\": {
         \"@context\": \"http://www.w3.org/ns/odrl.jsonld\",
         \"@id\": \"${REVERSE_OFFER_ID}\",
         \"@type\": \"Offer\",
-        \"assigner\": \"${CONSUMER_DID}\",
+        \"assigner\": \"${P2_DID}\",
         \"target\": \"reverse-asset-1\",
         \"permission\": [],
         \"prohibition\": [],
@@ -490,8 +490,8 @@ else
   echo "  Negotiation ID: ${REVERSE_NEGOTIATION_ID}"
   echo "  Polling for FINALIZED state..."
 
-  if poll_state "${PROVIDER_MGMT}/v3/contractnegotiations/${REVERSE_NEGOTIATION_ID}" "FINALIZED" "$POLL_TIMEOUT"; then
-    REVERSE_AGREEMENT_ID=$(curl -s "${PROVIDER_MGMT}/v3/contractnegotiations/${REVERSE_NEGOTIATION_ID}" \
+  if poll_state "${P1_MGMT}/v3/contractnegotiations/${REVERSE_NEGOTIATION_ID}" "FINALIZED" "$POLL_TIMEOUT"; then
+    REVERSE_AGREEMENT_ID=$(curl -s "${P1_MGMT}/v3/contractnegotiations/${REVERSE_NEGOTIATION_ID}" \
       -H "X-Api-Key: $API_KEY" | jq -r '.contractAgreementId // empty')
     echo "  Agreement ID: ${REVERSE_AGREEMENT_ID:-<empty>}"
     [ -n "$REVERSE_AGREEMENT_ID" ] && rc=0 || rc=1; assert_ok "Reverse negotiation reaches FINALIZED with non-empty agreement ID" $rc
@@ -512,13 +512,13 @@ if [ -z "${REVERSE_AGREEMENT_ID:-}" ]; then
   FAILURES+=("Reverse transfer skipped — no agreement ID")
   REVERSE_TRANSFER_ID=""
 else
-  REVERSE_TRANSFER_ID=$(curl -s -X POST "${PROVIDER_MGMT}/v3/transferprocesses" \
+  REVERSE_TRANSFER_ID=$(curl -s -X POST "${P1_MGMT}/v3/transferprocesses" \
     -H "Content-Type: application/json" \
     -H "X-Api-Key: $API_KEY" \
     -d "{
       \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-      \"counterPartyAddress\": \"${CONSUMER_DSP}\",
-      \"counterPartyId\": \"${CONSUMER_DID}\",
+      \"counterPartyAddress\": \"${P2_DSP}\",
+      \"counterPartyId\": \"${P2_DID}\",
       \"protocol\": \"dataspace-protocol-http\",
       \"contractId\": \"${REVERSE_AGREEMENT_ID}\",
       \"assetId\": \"reverse-asset-1\",
@@ -528,7 +528,7 @@ else
   echo "  Transfer ID: ${REVERSE_TRANSFER_ID}"
   echo "  Polling for STARTED state..."
 
-  if poll_state "${PROVIDER_MGMT}/v3/transferprocesses/${REVERSE_TRANSFER_ID}" "STARTED" "$POLL_TIMEOUT"; then
+  if poll_state "${P1_MGMT}/v3/transferprocesses/${REVERSE_TRANSFER_ID}" "STARTED" "$POLL_TIMEOUT"; then
     assert_ok "Reverse transfer reaches STARTED" 0
   else
     assert_ok "Reverse transfer reaches STARTED within ${POLL_TIMEOUT}s" 1
@@ -545,14 +545,14 @@ if [ -z "${REVERSE_TRANSFER_ID:-}" ]; then
   FAILED=$((FAILED + 1))
   FAILURES+=("Reverse EDR fetch skipped — no transfer ID")
 else
-  REVERSE_TOKEN=$(curl -s "${PROVIDER_MGMT}/v3/edrs/${REVERSE_TRANSFER_ID}/dataaddress" \
+  REVERSE_TOKEN=$(curl -s "${P1_MGMT}/v3/edrs/${REVERSE_TRANSFER_ID}/dataaddress" \
     -H "X-Api-Key: $API_KEY" | jq -r '.authorization // empty')
 
   if [ -z "$REVERSE_TOKEN" ]; then
     echo "  Failed to retrieve EDR token"
     assert_ok "Reverse EDR token is non-empty" 1
   else
-    REVERSE_DATA_HTTP=$(curl -s -o /tmp/e2e-reverse-data-response.json -w "%{http_code}" "$CONSUMER_DATA_PLANE_PUBLIC" \
+    REVERSE_DATA_HTTP=$(curl -s -o /tmp/e2e-reverse-data-response.json -w "%{http_code}" "$P2_DATA_PLANE_PUBLIC" \
       -H "Authorization: Bearer $REVERSE_TOKEN")
     echo "  HTTP $REVERSE_DATA_HTTP"
 
@@ -585,13 +585,13 @@ if [ -z "${REVERSE_AGREEMENT_ID:-}" ]; then
   FAILURES+=("Reverse push transfer skipped — no agreement ID")
   REVERSE_PUSH_TRANSFER_ID=""
 else
-  REVERSE_PUSH_TRANSFER_ID=$(curl -s -X POST "${PROVIDER_MGMT}/v3/transferprocesses" \
+  REVERSE_PUSH_TRANSFER_ID=$(curl -s -X POST "${P1_MGMT}/v3/transferprocesses" \
     -H "Content-Type: application/json" \
     -H "X-Api-Key: $API_KEY" \
     -d "{
       \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-      \"counterPartyAddress\": \"${CONSUMER_DSP}\",
-      \"counterPartyId\": \"${CONSUMER_DID}\",
+      \"counterPartyAddress\": \"${P2_DSP}\",
+      \"counterPartyId\": \"${P2_DID}\",
       \"protocol\": \"dataspace-protocol-http\",
       \"contractId\": \"${REVERSE_AGREEMENT_ID}\",
       \"assetId\": \"reverse-asset-1\",
@@ -617,7 +617,7 @@ if [ -z "${REVERSE_PUSH_TRANSFER_ID:-}" ]; then
   FAILURES+=("Reverse push transfer poll skipped — no transfer ID")
 else
   echo "  Polling for COMPLETED state..."
-  if poll_state "${PROVIDER_MGMT}/v3/transferprocesses/${REVERSE_PUSH_TRANSFER_ID}" "COMPLETED" "$POLL_TIMEOUT"; then
+  if poll_state "${P1_MGMT}/v3/transferprocesses/${REVERSE_PUSH_TRANSFER_ID}" "COMPLETED" "$POLL_TIMEOUT"; then
     assert_ok "Reverse push transfer reaches COMPLETED" 0
   else
     assert_ok "Reverse push transfer reaches COMPLETED within ${POLL_TIMEOUT}s" 1
