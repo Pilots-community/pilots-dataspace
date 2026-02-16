@@ -16,14 +16,14 @@ services:
     environment:
       POSTGRES_USER: edc
       POSTGRES_PASSWORD: edc
-      POSTGRES_DB: provider_controlplane
+      POSTGRES_DB: participant_1_controlplane
     ports:
       - "15432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ../../config/docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U edc -d provider_controlplane"]
+      test: ["CMD-SHELL", "pg_isready -U edc -d participant_1_controlplane"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -59,12 +59,12 @@ services:
       timeout: 5s
       retries: 10
 
-  provider-identityhub:
+  participant-1-identityhub:
     image: identityhub:latest
-    container_name: provider-identityhub
+    container_name: participant-1-identityhub
     command: >
       sh -c "exec java -Djava.security.egd=file:/dev/urandom
-      -Dedc.fs.config=/app/config/identityhub-provider.properties
+      -Dedc.fs.config=/app/config/identityhub-participant-1.properties
       -Dedc.hostname=${MY_PUBLIC_HOST}
       -Dedc.iam.sts.privatekey.alias=did:web:${MY_PUBLIC_HOST}%3A7093-alias
       -Dedc.iam.sts.publickey.id=did:web:${MY_PUBLIC_HOST}%3A7093#key-1
@@ -77,7 +77,7 @@ services:
       - "7095:7095"
       - "7096:7096"
     volumes:
-      - ../../config/docker/identityhub-provider.properties:/app/config/identityhub-provider.properties:ro
+      - ../../config/docker/identityhub-participant-1.properties:/app/config/identityhub-participant-1.properties:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,12 +89,12 @@ services:
       timeout: 5s
       retries: 10
 
-  consumer-identityhub:
+  participant-2-identityhub:
     image: identityhub:latest
-    container_name: consumer-identityhub
+    container_name: participant-2-identityhub
     command: >
       sh -c "exec java -Djava.security.egd=file:/dev/urandom
-      -Dedc.fs.config=/app/config/identityhub-consumer.properties
+      -Dedc.fs.config=/app/config/identityhub-participant-2.properties
       -Dedc.hostname=${MY_PUBLIC_HOST}
       -Dedc.iam.sts.privatekey.alias=did:web:${MY_PUBLIC_HOST}%3A7083-alias
       -Dedc.iam.sts.publickey.id=did:web:${MY_PUBLIC_HOST}%3A7083#key-1
@@ -107,7 +107,7 @@ services:
       - "7085:7085"
       - "7086:7086"
     volumes:
-      - ../../config/docker/identityhub-consumer.properties:/app/config/identityhub-consumer.properties:ro
+      - ../../config/docker/identityhub-participant-2.properties:/app/config/identityhub-participant-2.properties:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,20 +119,20 @@ services:
       timeout: 5s
       retries: 10
 
-  provider-controlplane:
+  participant-1-controlplane:
     image: controlplane:latest
-    container_name: provider-controlplane
+    container_name: participant-1-controlplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
       exec java -Djava.security.egd=file:/dev/urandom
-      -Dedc.fs.config=/app/config/controlplane-provider.properties
+      -Dedc.fs.config=/app/config/controlplane-participant-1.properties
       -Dedc.participant.id=did:web:${MY_PUBLIC_HOST}%3A7093
       -Dedc.iam.issuer.id=did:web:${MY_PUBLIC_HOST}%3A7093
       -Dedc.iam.sts.privatekey.alias=did:web:${MY_PUBLIC_HOST}%3A7093-alias
       -Dedc.iam.sts.publickey.id=did:web:${MY_PUBLIC_HOST}%3A7093#key-1
       -Dedc.iam.sts.oauth.client.id=did:web:${MY_PUBLIC_HOST}%3A7093
       -Dedc.iam.sts.oauth.client.secret.alias=did:web:${MY_PUBLIC_HOST}%3A7093-sts-client-secret
-      -Dedc.iam.sts.oauth.token.url=http://provider-identityhub:7096/api/sts/token
+      -Dedc.iam.sts.oauth.token.url=http://participant-1-identityhub:7096/api/sts/token
       -Dedc.dsp.callback.address=http://${MY_PUBLIC_HOST}:19194/protocol
       -Dedc.demo.dcp.issuer.did=did:web:${MY_PUBLIC_HOST}%3A9876
       -jar edc-controlplane.jar"
@@ -142,13 +142,13 @@ services:
       - "19193:19193"
       - "19194:19194"
     volumes:
-      - ../../config/docker/controlplane-provider.properties:/app/config/controlplane-provider.properties:ro
+      - ../../config/docker/controlplane-participant-1.properties:/app/config/controlplane-participant-1.properties:ro
     depends_on:
       postgres:
         condition: service_healthy
       vault:
         condition: service_healthy
-      provider-identityhub:
+      participant-1-identityhub:
         condition: service_healthy
       did-server:
         condition: service_healthy
@@ -158,20 +158,20 @@ services:
       timeout: 5s
       retries: 10
 
-  consumer-controlplane:
+  participant-2-controlplane:
     image: controlplane:latest
-    container_name: consumer-controlplane
+    container_name: participant-2-controlplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
       exec java -Djava.security.egd=file:/dev/urandom
-      -Dedc.fs.config=/app/config/controlplane-consumer.properties
+      -Dedc.fs.config=/app/config/controlplane-participant-2.properties
       -Dedc.participant.id=did:web:${MY_PUBLIC_HOST}%3A7083
       -Dedc.iam.issuer.id=did:web:${MY_PUBLIC_HOST}%3A7083
       -Dedc.iam.sts.privatekey.alias=did:web:${MY_PUBLIC_HOST}%3A7083-alias
       -Dedc.iam.sts.publickey.id=did:web:${MY_PUBLIC_HOST}%3A7083#key-1
       -Dedc.iam.sts.oauth.client.id=did:web:${MY_PUBLIC_HOST}%3A7083
       -Dedc.iam.sts.oauth.client.secret.alias=did:web:${MY_PUBLIC_HOST}%3A7083-sts-client-secret
-      -Dedc.iam.sts.oauth.token.url=http://consumer-identityhub:7086/api/sts/token
+      -Dedc.iam.sts.oauth.token.url=http://participant-2-identityhub:7086/api/sts/token
       -Dedc.dsp.callback.address=http://${MY_PUBLIC_HOST}:29194/protocol
       -Dedc.receiver.http.endpoint=http://${MY_PUBLIC_HOST}:29194/protocol
       -Dedc.demo.dcp.issuer.did=did:web:${MY_PUBLIC_HOST}%3A9876
@@ -182,13 +182,13 @@ services:
       - "29193:29193"
       - "29194:29194"
     volumes:
-      - ../../config/docker/controlplane-consumer.properties:/app/config/controlplane-consumer.properties:ro
+      - ../../config/docker/controlplane-participant-2.properties:/app/config/controlplane-participant-2.properties:ro
     depends_on:
       postgres:
         condition: service_healthy
       vault:
         condition: service_healthy
-      consumer-identityhub:
+      participant-2-identityhub:
         condition: service_healthy
       did-server:
         condition: service_healthy
@@ -198,13 +198,13 @@ services:
       timeout: 5s
       retries: 10
 
-  provider-dataplane:
+  participant-1-dataplane:
     image: dataplane:latest
-    container_name: provider-dataplane
+    container_name: participant-1-dataplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
       exec java -Djava.security.egd=file:/dev/urandom
-      -Dedc.fs.config=/app/config/dataplane.properties
+      -Dedc.fs.config=/app/config/dataplane-participant-1.properties
       -Dedc.dataplane.api.public.baseurl=http://${MY_PUBLIC_HOST}:38185/public
       -jar edc-dataplane.jar"
     ports:
@@ -212,14 +212,14 @@ services:
       - "38182:38182"
       - "38185:38185"
     volumes:
-      - ../../config/docker/dataplane.properties:/app/config/dataplane.properties:ro
+      - ../../config/docker/dataplane-participant-1.properties:/app/config/dataplane-participant-1.properties:ro
       - ../../config/certs:/app/certs:ro
     depends_on:
       postgres:
         condition: service_healthy
       vault:
         condition: service_healthy
-      provider-controlplane:
+      participant-1-controlplane:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:38181/api/check/health"]
@@ -227,13 +227,13 @@ services:
       timeout: 5s
       retries: 10
 
-  consumer-dataplane:
+  participant-2-dataplane:
     image: dataplane:latest
-    container_name: consumer-dataplane
+    container_name: participant-2-dataplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
       exec java -Djava.security.egd=file:/dev/urandom
-      -Dedc.fs.config=/app/config/dataplane-consumer.properties
+      -Dedc.fs.config=/app/config/dataplane-participant-2.properties
       -Dedc.participant.id=did:web:${MY_PUBLIC_HOST}%3A7083
       -Dedc.dataplane.api.public.baseurl=http://${MY_PUBLIC_HOST}:48185/public
       -jar edc-dataplane.jar"
@@ -242,14 +242,14 @@ services:
       - "48182:48182"
       - "48185:48185"
     volumes:
-      - ../../config/docker/dataplane-consumer.properties:/app/config/dataplane-consumer.properties:ro
+      - ../../config/docker/dataplane-participant-2.properties:/app/config/dataplane-participant-2.properties:ro
       - ../../config/certs:/app/certs:ro
     depends_on:
       postgres:
         condition: service_healthy
       vault:
         condition: service_healthy
-      consumer-controlplane:
+      participant-2-controlplane:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:48181/api/check/health"]

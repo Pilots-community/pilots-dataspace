@@ -9,15 +9,15 @@ Each machine runs the full EDC stack (IdentityHub + provider + consumer + data p
 ```
 Machine A (100.x.x.x)                    Machine B (100.x.x.x)
 +----------------------------+            +----------------------------+
-| provider-identityhub 7090+ |            | provider-identityhub 7090+ |
-| consumer-identityhub 7080+ |            | consumer-identityhub 7080+ |
-| provider-controlplane      |            | provider-controlplane      |
+| participant-1-identityhub 7090+ |            | participant-1-identityhub 7090+ |
+| participant-2-identityhub 7080+ |            | participant-2-identityhub 7080+ |
+| participant-1-controlplane      |            | participant-1-controlplane      |
 |   DSP: 19194               | <-------->  |   DSP: 19194               |
-| consumer-controlplane      |  Tailscale | consumer-controlplane      |
+| participant-2-controlplane      |  Tailscale | participant-2-controlplane      |
 |   DSP: 29194               | <-------->  |   DSP: 29194               |
-| provider-dataplane         |  WireGuard | provider-dataplane         |
+| participant-1-dataplane         |  WireGuard | participant-1-dataplane         |
 |   public: 38185            | <-------->  |   public: 38185            |
-| consumer-dataplane         |            | consumer-dataplane         |
+| participant-2-dataplane         |            | participant-2-dataplane         |
 |   public: 48185            | <-------->  |   public: 48185            |
 | http-receiver: 4000        |            | http-receiver: 4000        |
 | did-server: 9876           |            | did-server: 9876           |
@@ -74,11 +74,11 @@ This creates participant contexts, generates DID documents, issues Verifiable Cr
 ### 6. Verify health
 
 ```bash
-curl http://localhost:18181/api/check/health   # provider CP
-curl http://localhost:28181/api/check/health   # consumer CP
-curl http://localhost:38181/api/check/health   # data plane
-curl http://localhost:7090/api/check/health    # provider IH
-curl http://localhost:7080/api/check/health    # consumer IH
+curl http://localhost:18181/api/check/health   # participant-1 CP
+curl http://localhost:28181/api/check/health   # participant-2 CP
+curl http://localhost:38181/api/check/health   # participant-1 data plane
+curl http://localhost:7090/api/check/health    # participant-1 IH
+curl http://localhost:7080/api/check/health    # participant-2 IH
 ```
 
 ### 7. Repeat on the second machine

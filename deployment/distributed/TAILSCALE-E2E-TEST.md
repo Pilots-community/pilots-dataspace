@@ -12,11 +12,11 @@ Full E2E dataspace flow using the Tailscale IP on a single machine. Traffic exit
 
 ```bash
 HOST=100.113.174.98
-PROVIDER_DID="did:web:${HOST}%3A7093"
-CONSUMER_DID="did:web:${HOST}%3A7083"
+P1_DID="did:web:${HOST}%3A7093"
+P2_DID="did:web:${HOST}%3A7083"
 ```
 
-## Steps 1-3: Provider Setup (localhost)
+## Steps 1-3: Participant-1 Setup (localhost)
 
 ### 1. Create Asset
 
@@ -60,7 +60,7 @@ curl -X POST http://localhost:19193/management/v3/contractdefinitions \
   }'
 ```
 
-## Steps 4-7: Consumer Pull Transfer via Tailscale
+## Steps 4-7: Participant-2 Pull Transfer via Tailscale
 
 The `counterPartyAddress` and `counterPartyId` use the Tailscale IP and DID, so requests route through the host's Tailscale interface. On a second machine, these calls would be identical.
 
@@ -161,7 +161,7 @@ Expected response (the sample asset proxies jsonplaceholder):
 
 ### 8. Push Transfer (HttpData-PUSH)
 
-Reuse the same contract agreement from step 5. The provider data plane pushes data directly to the http-receiver:
+Reuse the same contract agreement from step 5. The participant-1 data plane pushes data directly to the http-receiver:
 
 ```bash
 curl -X POST http://localhost:29193/management/v3/transferprocesses \
@@ -195,7 +195,7 @@ Verify data arrived:
 curl http://localhost:4000/
 ```
 
-### 9. Reverse: Create Asset, Policy, and Contract on Consumer
+### 9. Reverse: Create Asset, Policy, and Contract on Participant-2
 
 ```bash
 curl -X POST http://localhost:29193/management/v3/assets \
@@ -204,7 +204,7 @@ curl -X POST http://localhost:29193/management/v3/assets \
   -d '{
     "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
     "@id": "reverse-asset-1",
-    "properties": { "name": "Consumer Data Asset", "contenttype": "application/json" },
+    "properties": { "name": "Participant-2 Data Asset", "contenttype": "application/json" },
     "dataAddress": { "type": "HttpData", "baseUrl": "https://jsonplaceholder.typicode.com/todos/2" }
   }'
 
@@ -229,7 +229,7 @@ curl -X POST http://localhost:29193/management/v3/contractdefinitions \
   }'
 ```
 
-### 10. Reverse: Provider Requests Consumer's Catalog and Negotiates
+### 10. Reverse: Participant-1 Requests Participant-2's Catalog and Negotiates
 
 ```bash
 curl -X POST http://localhost:19193/management/v3/catalog/request \
@@ -244,7 +244,7 @@ curl -X POST http://localhost:19193/management/v3/catalog/request \
   }'
 ```
 
-Copy the offer ID for `reverse-asset-1`. Negotiate using the provider management API (port 19193). The `assigner` is the consumer's DID:
+Copy the offer ID for `reverse-asset-1`. Negotiate using the participant-1 management API (port 19193). The `assigner` is the participant-2's DID:
 
 ```bash
 curl -X POST http://localhost:19193/management/v3/contractnegotiations \
@@ -275,7 +275,7 @@ curl http://localhost:19193/management/v3/contractnegotiations/<NEGOTIATION_ID> 
 
 Copy `contractAgreementId` from the response.
 
-### 11a. Reverse: Provider Pulls Data via Consumer Data Plane
+### 11a. Reverse: Participant-1 Pulls Data via Participant-2 Data Plane
 
 ```bash
 curl -X POST http://localhost:19193/management/v3/transferprocesses \
@@ -305,7 +305,7 @@ curl http://localhost:19193/management/v3/edrs/<TRANSFER_ID>/dataaddress \
   -H "x-api-key: password"
 ```
 
-The `endpoint` is `http://100.113.174.98:48185/public` -- the **consumer** data plane's public URL.
+The `endpoint` is `http://100.113.174.98:48185/public` -- the **participant-2** data plane's public URL.
 
 ```bash
 curl http://100.113.174.98:48185/public \
