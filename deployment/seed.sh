@@ -72,7 +72,7 @@ PROVIDER_RESULT=$(curl -s -w "\n%{http_code}" -X POST "${PROVIDER_IH_IDENTITY}/v
   }")
 
 PROVIDER_HTTP_CODE=$(echo "$PROVIDER_RESULT" | tail -1)
-PROVIDER_BODY=$(echo "$PROVIDER_RESULT" | head -n -1)
+PROVIDER_BODY=$(echo "$PROVIDER_RESULT" | sed '$d')
 echo "  HTTP ${PROVIDER_HTTP_CODE}: ${PROVIDER_BODY}"
 
 # Extract the provider API key and STS client secret for later use
@@ -120,7 +120,7 @@ CONSUMER_RESULT=$(curl -s -w "\n%{http_code}" -X POST "${CONSUMER_IH_IDENTITY}/v
   }")
 
 CONSUMER_HTTP_CODE=$(echo "$CONSUMER_RESULT" | tail -1)
-CONSUMER_BODY=$(echo "$CONSUMER_RESULT" | head -n -1)
+CONSUMER_BODY=$(echo "$CONSUMER_RESULT" | sed '$d')
 echo "  HTTP ${CONSUMER_HTTP_CODE}: ${CONSUMER_BODY}"
 
 if [ "$CONSUMER_HTTP_CODE" = "200" ] || [ "$CONSUMER_HTTP_CODE" = "201" ] || [ "$CONSUMER_HTTP_CODE" = "204" ]; then
@@ -203,10 +203,10 @@ store_or_update_secret() {
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
       echo " updated (was stale)"
     else
-      echo " FAILED to update (HTTP ${HTTP_CODE}): $(echo "$RESPONSE" | head -n -1)"
+      echo " FAILED to update (HTTP ${HTTP_CODE}): $(echo "$RESPONSE" | sed '$d')"
     fi
   else
-    echo " FAILED (HTTP ${HTTP_CODE}): $(echo "$RESPONSE" | head -n -1)"
+    echo " FAILED (HTTP ${HTTP_CODE}): $(echo "$RESPONSE" | sed '$d')"
   fi
 }
 
