@@ -72,28 +72,29 @@ Setting up a machine has four steps. Each step feeds into the next:
 
    ┌─────────────────────────────────────────────────────────────────────────┐
    │                                                                         │
-   │   ┌──────────┐  ┌──────────┐                                           │
-   │   │ postgres │  │  vault   │  ← start first (no dependencies)          │
-   │   │ (15432)  │  │  (8200)  │                                           │
-   │   └────┬─────┘  └────┬─────┘                                           │
+   │   ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌───────────────┐        │
+   │   │ postgres │  │  vault   │  │ did-server │  │ http-receiver │        │
+   │   │ (15432)  │  │  (8200)  │  │   (9876)   │  │    (4000)     │        │
+   │   └────┬─────┘  └────┬─────┘  └────────────┘  └───────────────┘        │
+   │        │              │         ← all start in parallel (no deps)       │
    │        │              │                                                 │
    │        ▼              ▼                                                 │
-   │   ┌────────────┐  ┌────────────┐                                       │
-   │   │ identityhub│  │ did-server │  ← wait for postgres + vault healthy  │
-   │   │ (7090-7096)│  │   (9876)   │                                       │
-   │   └────┬───────┘  └────────────┘                                       │
+   │   ┌────────────┐                                                        │
+   │   │ identityhub│  ← waits for postgres + vault healthy                  │
+   │   │ (7090-7096)│                                                        │
+   │   └────┬───────┘                                                        │
    │        │                                                                │
    │        ▼                                                                │
    │   ┌──────────────┐                                                      │
-   │   │ controlplane │  ← wait for identityhub + did-server healthy         │
-   │   │(19192-19194) │                                                      │
+   │   │ controlplane │  ← waits for postgres + vault +                      │
+   │   │(19192-19194) │    identityhub + did-server healthy                  │
    │   └────┬─────────┘                                                      │
    │        │                                                                │
    │        ▼                                                                │
-   │   ┌──────────────┐  ┌───────────────┐                                   │
-   │   │  dataplane   │  │ http-receiver │  ← wait for controlplane healthy  │
-   │   │(38181-38185) │  │    (4000)     │                                   │
-   │   └──────────────┘  └───────────────┘                                   │
+   │   ┌──────────────┐                                                      │
+   │   │  dataplane   │  ← waits for postgres + vault +                      │
+   │   │(38181-38185) │    controlplane healthy                              │
+   │   └──────────────┘                                                      │
    │                                                                         │
    └─────────────────────────────────────────────────────────────────────────┘
 
@@ -139,7 +140,17 @@ Setting up a machine has four steps. Each step feeds into the next:
    │         └── returns clientId + clientSecret (for STS auth)              │
    │                                                                         │
    │                                                                         │
-   │   4c. Publish participant DID document                                  │
+   │   4c. Activate participant context                                       │
+   │                                                                         │
+   │       seed.sh ──POST──→ Identity Hub (7092)                             │
+   │                         /api/identity/v1alpha/participants/<DID>/        │
+   │                         state?isActive=true                              │
+   │                                                                         │
+   │       Marks the participant as active so it can                         │
+   │       respond to DID resolution and credential requests.                │
+   │                                                                         │
+   │                                                                         │
+   │   4d. Publish participant DID document                                  │
    │                                                                         │
    │       seed.sh ──POST──→ Identity Hub (7092)                             │
    │                         /api/identity/v1alpha/participants/<DID>/        │
@@ -158,7 +169,7 @@ Setting up a machine has four steps. Each step feeds into the next:
    │       └──────────────────────────────────────────────────────┘          │
    │                                                                         │
    │                                                                         │
-   │   4d. Store STS client secret in Vault                                  │
+   │   4e. Store STS client secret in Vault                                  │
    │                                                                         │
    │       seed.sh ──POST──→ Control Plane (19193)                           │
    │                         /management/v3/secrets                           │
@@ -170,7 +181,7 @@ Setting up a machine has four steps. Each step feeds into the next:
    │       CP (19193) ──→ Vault (8200) ──→ stores secret                     │
    │                                                                         │
    │                                                                         │
-   │   4e. Store MembershipCredential in wallet                              │
+   │   4f. Store MembershipCredential in wallet                              │
    │                                                                         │
    │       seed.sh ──POST──→ Identity Hub (7092)                             │
    │                         /api/identity/v1alpha/participants/<DID>/        │
@@ -181,7 +192,7 @@ Setting up a machine has four steps. Each step feeds into the next:
    │       request it during DCP authentication.                             │
    │                                                                         │
    │                                                                         │
-   │   4f. Update issuer DID document on nginx                               │
+   │   4g. Update issuer DID document on nginx                               │
    │                                                                         │
    │       seed.sh ──docker cp──→ did-server (nginx)                         │
    │                              /usr/share/nginx/html/                     │
