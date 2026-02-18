@@ -68,6 +68,18 @@ This project uses the **Decentralized Claims Protocol (DCP)** for identity, repl
 | Participant-2 IdentityHub | `config/identityhub-participant-2.properties` | base: 7080, creds: 7081, identity: 7082, DID: 7083, version: 7085, STS: 7086 |
 | DID Server (NGINX) | — | 9876 |
 
+## Deployment Options
+
+This project supports three deployment modes. The dev setup (documented below) runs everything on a single machine for local development. The other two are for multi-machine scenarios where connectors on separate networks need to communicate.
+
+| Mode | Location | Use case |
+|------|----------|----------|
+| **Dev (single machine)** | `docker-compose.yml` (root) | Local development — 2 participants on one machine, Docker-internal networking. Documented in this README. |
+| **Distributed (2 participants per machine)** | [`deployment/distributed/`](deployment/distributed/README.md) | Multi-machine testing — both participants run on each machine, public IPs for cross-machine communication. |
+| **Standalone connector (1 per machine)** | [`deployment/connector/`](deployment/connector/README.md) | Production-like — one self-contained connector stack per machine, each with independent keys and its own VC issuer. |
+
+The **standalone connector** deployment is the target for real-world use: each organization runs one connector on their own infrastructure. See its [README](deployment/connector/README.md) for full setup instructions, prerequisites, and an end-to-end walkthrough.
+
 ## Generate Keys and Credentials
 
 Run this once before building or starting services. It generates all private keys, the issuer DID document, and pre-signed Verifiable Credentials:
@@ -192,10 +204,6 @@ SQL
 ```
 
 The schema bootstrapper will create tables automatically when each runtime starts.
-
-## Distributed Deployment (Multi-Machine)
-
-To run connectors on separate machines communicating over a network tunnel, see [`deployment/distributed/README.md`](deployment/distributed/README.md).
 
 ## Verify Health
 
