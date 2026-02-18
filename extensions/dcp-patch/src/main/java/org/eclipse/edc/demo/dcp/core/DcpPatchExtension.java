@@ -17,6 +17,7 @@ import org.eclipse.edc.spi.types.TypeManager;
 import org.eclipse.edc.transform.spi.TypeTransformerRegistry;
 import org.eclipse.edc.transform.transformer.edc.to.JsonValueToGenericTypeTransformer;
 
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 
@@ -28,6 +29,7 @@ public class DcpPatchExtension implements ServiceExtension {
     public static final String NAME = "DCP Patch Extension";
     private static final String DEFAULT_ISSUER_DID = "did:web:did-server%3A9876";
     private static final String ISSUER_DID_SETTING = "edc.demo.dcp.issuer.did";
+    private static final String TRUSTED_ISSUER_DIDS_SETTING = "edc.demo.dcp.trusted.issuer.dids";
 
     @Inject
     private TypeManager typeManager;
@@ -61,10 +63,21 @@ public class DcpPatchExtension implements ServiceExtension {
         signatureSuiteRegistry.register(VcConstants.JWS_2020_SIGNATURE_SUITE, suite);
         monitor.info("Registered JWS 2020 signature suite");
 
-        // register the dataspace issuer as a trusted issuer
-        var issuerDid = context.getSetting(ISSUER_DID_SETTING, DEFAULT_ISSUER_DID);
-        trustedIssuerRegistry.register(new Issuer(issuerDid, Map.of()), WILDCARD);
-        monitor.info("Registered trusted issuer: %s".formatted(issuerDid));
+        // register trusted issuers — multi-issuer setting takes precedence
+        var trustedIssuerDids = context.getSetting(TRUSTED_ISSUER_DIDS_SETTING, null);
+        if (trustedIssuerDids != null && !trustedIssuerDids.isBlank()) {
+            Arrays.stream(trustedIssuerDids.split(","))
+                    .map(String::trim)
+                    .filter(did -> !did.isEmpty())
+                    .forEach(did -> {
+                        trustedIssuerRegistry.register(new Issuer(did, Map.of()), WILDCARD);
+                        monitor.info("Registered trusted issuer: %s".formatted(did));
+                    });
+        } else {
+            var issuerDid = context.getSetting(ISSUER_DID_SETTING, DEFAULT_ISSUER_DID);
+            trustedIssuerRegistry.register(new Issuer(issuerDid, Map.of()), WILDCARD);
+            monitor.info("Registered trusted issuer: %s".formatted(issuerDid));
+        }
 
         // register a default scope provider that requests MembershipCredential for all DSP interactions
         var contextMappingFunction = new DefaultScopeMappingFunction(Set.of("org.eclipse.edc.vc.type:MembershipCredential:read"));
