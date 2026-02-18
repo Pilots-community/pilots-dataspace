@@ -41,6 +41,7 @@ config/certs/
 deployment/assets/*_private.pem
 deployment/assets/*_public.pem
 deployment/assets/credentials/
+deployment/assets/participant-*/
 
 .terraform*
 

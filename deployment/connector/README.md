@@ -16,6 +16,7 @@ Machine A (192.168.1.50)              Machine B (192.168.1.51)
 |   mgmt:19193 DSP:19194     | <---> |   mgmt:19193 DSP:19194     |
 | dataplane          38181    |       | dataplane          38181    |
 |   public:38185              |       |   public:38185              |
+| dashboard          3000    |       | dashboard          3000    |
 | http-receiver      4000    |       | http-receiver      4000    |
 | did-server         9876    |       | did-server         9876    |
 | vault              8200    |       | vault              8200    |
@@ -195,11 +196,17 @@ The seed script:
 5. Stores the MembershipCredential in IdentityHub
 6. Updates the issuer DID document on the DID server (nginx)
 
-### 6. Repeat on every other machine
+### 6. Open the dashboard
+
+The dashboard is available at **http://localhost:3000**. It shows health status for all three services (Control Plane, Data Plane, IdentityHub) and provides a UI for managing assets, policies, contracts, and transfers.
+
+No extra configuration is needed — the dashboard image uses ENV defaults that match the standalone service names (`controlplane`, `dataplane`, `identityhub`) and ports.
+
+### 7. Repeat on every other machine
 
 Each machine generates its own keys, builds (or loads) images, starts its stack, and runs its own seed script. The only shared configuration is `TRUSTED_ISSUER_DIDS` — all machines must list the same set of issuer DIDs.
 
-### 7. Verify cross-machine connectivity
+### 8. Verify cross-machine connectivity
 
 From any machine, verify you can reach another machine's endpoints:
 
@@ -382,6 +389,74 @@ Once the transfer reaches `COMPLETED`, verify the data arrived:
 curl http://localhost:4000/
 ```
 
+## Development Setup (Two Participants on One Machine)
+
+For local development you can run two complete participant stacks on a single machine using the root `docker-compose.yml`. This simulates two independent organizations without needing separate hosts.
+
+### Architecture
+
+```
+Single dev machine
++--------------------------------------------------------------------------+
+| docker-compose.yml (project root)                                        |
+|                                                                          |
+| Participant 1                           Participant 2                    |
+| ─────────────────────────               ─────────────────────────        |
+| participant-1-identityhub  7090-96      participant-2-identityhub  7080-86  |
+| participant-1-controlplane 18181        participant-2-controlplane 28181    |
+|   mgmt:19193 DSP:19194                   mgmt:29193 DSP:29194              |
+| participant-1-dataplane    38181        participant-2-dataplane    48181    |
+|   public:38185                            public:48185                     |
+| participant-1-dashboard    3000         participant-2-dashboard    3001     |
+| participant-1-vault        8200         participant-2-vault        8201     |
+| participant-1-did-server   9876         participant-2-did-server   9877     |
+|                                                                          |
+| postgres  15432 (shared — separate databases per participant)            |
++--------------------------------------------------------------------------+
+```
+
+Each participant has its own Vault and DID server with independently generated issuer keys and VCs, matching the standalone deployment's multi-issuer trust model.
+
+Each participant gets its own dashboard instance, configured at runtime via environment variables to point at its respective connector services.
+
+### Quick Start
+
+From the **project root**:
+
+```bash
+# 1. Generate keys
+./generate-keys.sh
+
+# 2. Build all Docker images (controlplane, dataplane, identityhub, dashboard)
+./gradlew dockerize
+
+# 3. Start all services
+docker compose up -d
+
+# 4. Wait for all containers to be healthy
+docker compose ps
+
+# 5. Seed identity data for both participants
+./deployment/seed.sh
+```
+
+### Dashboards
+
+| Dashboard | URL | Participant |
+|-----------|-----|-------------|
+| Participant 1 | http://localhost:3000 | Controls participant-1's connector |
+| Participant 2 | http://localhost:3001 | Controls participant-2's connector |
+
+Both dashboards use the same Docker image. The root `docker-compose.yml` passes environment variables (`CP_HOST`, `CP_MGMT_PORT`, `DP_HOST`, etc.) to configure which connector each dashboard proxies to.
+
+### Running the E2E test
+
+```bash
+./test-e2e.sh
+```
+
+This runs all 20 E2E steps with 23 assertions across both participants and exits with code 0 on success.
+
 ## Distributing Docker Images
 
 If a machine doesn't have the source code or JDK to build images, transfer pre-built images:
@@ -428,7 +503,7 @@ Remote machines need to reach these ports on this machine:
 | 38185 | Data Plane public | Data fetch via EDR token (pull transfers) |
 | 4000 | http-receiver | Push transfer destination (test only) |
 
-Management port (19193) only needs to be reachable from your local terminal, not from remote machines.
+Dashboard (3000) and management port (19193) only need to be reachable from your local terminal, not from remote machines.
 
 ### Verifying port connectivity
 
