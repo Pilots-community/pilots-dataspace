@@ -71,108 +71,118 @@ After setup, the machine has:
 When Machine B (consumer) requests Machine A's (provider) catalog:
 
 ```
-  Machine B (consumer)                                    Machine A (provider)
-  ════════════════════                                    ════════════════════
+        Machine B (consumer)                                Machine A (provider)
+ ════════════════════════════════════              ════════════════════════════════════
 
-  ┌──────────────┐       ┌──────────────┐                ┌──────────────┐
-  │ Control Plane│       │ Identity Hub │                │ Control Plane│
-  └──────┬───────┘       └──────┬───────┘                └──────┬───────┘
-         │                      │                               │
-         │                      │                               │
- ── 1. Get token ──────────────────────────────────────────────────────────────
-         │                      │                               │
-         │  STS token request   │                               │
-         │  "I need a token     │                               │
-         │   for Machine A"     │                               │
-         │─────────────────────>│                               │
-         │                      │                               │
-         │  SI token            │                               │
-         │  (outer JWT          │                               │
-         │   + inner access     │                               │
-         │   token)             │                               │
-         │<─────────────────────│                               │
-         │                      │                               │
-         │                      │                               │
- ── 2. Send DSP request ──────────────────────────────────────────────────────
-         │                      │                               │
-         │          POST /protocol/catalog/request              │
-         │          Authorization: Bearer <SI token>            │
-         │─────────────────────────────────────────────────────>│
-         │                      │                               │
-         │                      │                               │
- ── 3. Verify SI token ───────────────────────────────────────────────────────
-         │                      │                               │
-         │                      │    Read iss: did:web:B:7093   │
-         │                      │    Resolve participant DID    │
-         │                      │               │               │
-         │                      │<──────────────┘               │
-         │                      │  GET /.well-known/did.json    │
-         │                      │  (port 7093)                  │
-         │                      │──────────────>│               │
-         │                      │               │               │
-         │                      │    Verify JWT signature       │
-         │                      │    with Ed25519 public key    │
-         │                      │               │               │
-         │                      │    Check aud matches          │
-         │                      │    Machine A's DID  ✓         │
-         │                      │                               │
-         │                      │                               │
- ── 4. Request credentials ────────────────────────────────────────────────────
-         │                      │                               │
-         │                      │    Extract inner token        │
-         │                      │    → scope: MembershipCred    │
-         │                      │                               │
-         │                      │    Read CredentialService     │
-         │                      │    from B's DID document      │
-         │                      │               │               │
-         │                      │<──────────────┘               │
-         │                      │  POST /credentials/.../       │
-         │                      │  presentations/query          │
-         │                      │  (port 7091)                  │
-         │                      │──────────────>│               │
-         │                      │                               │
-         │                      │                               │
- ── 5. Present credential ─────────────────────────────────────────────────────
-         │                      │                               │
-         │               Find MembershipCredential              │
-         │               in wallet                              │
-         │                      │                               │
-         │               Wrap in Verifiable                     │
-         │               Presentation (VP)                      │
-         │                      │                               │
-         │                      │  VP containing VC JWT         │
-         │                      │──────────────>│               │
-         │                      │                               │
-         │                      │                               │
- ── 6. Verify MembershipCredential ────────────────────────────────────────────
-         │                      │                               │
-         │                      │    Read issuer from VC:       │
-         │                      │    did:web:B:9876             │
-         │                      │               │               │
-         │                      │    Is issuer in trusted       │
-         │                      │    issuer registry?  ✓        │
-         │                      │               │               │
-         │                      │    Resolve issuer DID ────┐   │
-         │                      │                           │   │
-  ┌──────────────┐              │                           │   │
-  │  DID Server  │              │                           │   │
-  │  (nginx)     │              │   GET /.well-known/       │   │
-  │  port 9876   │<────────────────── did.json ─────────────┘   │
-  │              │              │                                │
-  │              │──────────────────  issuer DID doc  ──────────>│
-  └──────────────┘              │                                │
-         │                      │    Verify VC JWT signature     │
-         │                      │    with EC P-256 public key  ✓ │
-         │                      │                                │
-         │                      │    Check VC type, expiry     ✓ │
-         │                      │                                │
-         │                      │                                │
- ── 7. Return catalog ─────────────────────────────────────────────────────────
-         │                      │                                │
-         │                 Catalog response                      │
-         │<─────────────────────────────────────────────────────│
-         │                      │                                │
+ ┌────────┐  ┌────────────┐  ┌────────────┐      ┌────────────┐  ┌────────────┐  ┌────────┐
+ │  DID   │  │  Identity  │  │  Control   │      │  Control   │  │  Identity  │  │  DID   │
+ │ Server │  │  Hub       │  │  Plane     │      │  Plane     │  │  Hub       │  │ Server │
+ │(nginx) │  │            │  │            │      │            │  │            │  │(nginx) │
+ │ (9876) │  │(7091/7093/ │  │  (19194)   │      │  (19194)   │  │(7091/7093/ │  │ (9876) │
+ │        │  │ 7096)      │  │            │      │            │  │ 7096)      │  │        │
+ └───┬────┘  └─────┬──────┘  └─────┬──────┘      └─────┬──────┘  └─────┬──────┘  └───┬────┘
+     │             │               │                    │               │              │
+     │             │               │                    │               │              │
+ ── 1. Get token ──────────────────────────────────────────────────────────────────────────
+     │             │               │                    │               │              │
+     │             │  STS request  │                    │               │              │
+     │             │  "token for   │                    │               │              │
+     │             │   Machine A"  │                    │               │              │
+     │             │<──────────────│                    │               │              │
+     │             │               │                    │               │              │
+     │             │  SI token     │                    │               │              │
+     │             │  (outer JWT   │                    │               │              │
+     │             │   + inner     │                    │               │              │
+     │             │   access tkn) │                    │               │              │
+     │             │──────────────>│                    │               │              │
+     │             │               │                    │               │              │
+     │             │               │                    │               │              │
+ ── 2. Send DSP request ──────────────────────────────────────────────────────────────────
+     │             │               │                    │               │              │
+     │             │               │  POST /protocol/   │               │              │
+     │             │               │  catalog/request   │               │              │
+     │             │               │  Auth: Bearer      │               │              │
+     │             │               │  <SI token>        │               │              │
+     │             │               │───────────────────>│               │              │
+     │             │               │                    │               │              │
+     │             │               │                    │               │              │
+ ── 3. Verify SI token ───────────────────────────────────────────────────────────────────
+     │             │               │                    │               │              │
+     │             │               │      Read iss: did:web:B:7093      │              │
+     │             │               │      Resolve participant DID       │              │
+     │             │               │                    │               │              │
+     │             │  GET /.well-known/did.json         │               │              │
+     │             │  (port 7093)  │                    │               │              │
+     │             │<──────────────────────────────────│                │              │
+     │             │               │                    │               │              │
+     │             │  DID doc (Ed25519 pub key)         │               │              │
+     │             │──────────────────────────────────>│                │              │
+     │             │               │                    │               │              │
+     │             │               │      Verify JWT signature          │              │
+     │             │               │      with Ed25519 pub key  ✓       │              │
+     │             │               │                    │               │              │
+     │             │               │      Check aud matches             │              │
+     │             │               │      Machine A's DID  ✓            │              │
+     │             │               │                    │               │              │
+     │             │               │                    │               │              │
+ ── 4. Request credentials ───────────────────────────────────────────────────────────────
+     │             │               │                    │               │              │
+     │             │               │      Extract inner token           │              │
+     │             │               │      → scope: MembershipCred       │              │
+     │             │               │                    │               │              │
+     │             │               │      Read CredentialService        │              │
+     │             │               │      from B's DID document         │              │
+     │             │               │                    │               │              │
+     │             │  POST /credentials/.../            │               │              │
+     │             │  presentations/query               │               │              │
+     │             │  (port 7091)  │                    │               │              │
+     │             │<────────────────────────────────── │               │              │
+     │             │               │                    │               │              │
+     │             │               │                    │               │              │
+ ── 5. Present credential ────────────────────────────────────────────────────────────────
+     │             │               │                    │               │              │
+     │       Find MembershipCredential                  │               │              │
+     │       in wallet             │                    │               │              │
+     │             │               │                    │               │              │
+     │       Wrap in Verifiable    │                    │               │              │
+     │       Presentation (VP)     │                    │               │              │
+     │             │               │                    │               │              │
+     │             │  VP containing VC JWT              │               │              │
+     │             │ ──────────────────────────────────>│               │              │
+     │             │               │                    │               │              │
+     │             │               │                    │               │              │
+ ── 6. Verify MembershipCredential ───────────────────────────────────────────────────────
+     │             │               │                    │               │              │
+     │             │               │      Read issuer from VC:          │              │
+     │             │               │      did:web:B:9876                │              │
+     │             │               │                    │               │              │
+     │             │               │      Is issuer in trusted          │              │
+     │             │               │      issuer registry?  ✓           │              │
+     │             │               │                    │               │              │
+     │             │               │      Resolve issuer DID            │              │
+     │             │               │                    │               │              │
+     │  GET /.well-known/did.json  │                    │               │              │
+     │  (port 9876)│               │                    │               │              │
+     │<──────────────────────────────────────────────── │               │              │
+     │             │               │                    │               │              │
+     │  issuer DID doc             │                    │               │              │
+     │  (P-256 pub key)            │                    │               │              │
+     │ ────────────────────────────────────────────────>│               │              │
+     │             │               │                    │               │              │
+     │             │               │      Verify VC JWT signature       │              │
+     │             │               │      with P-256 pub key  ✓         │              │
+     │             │               │                    │               │              │
+     │             │               │      Check VC type, expiry  ✓      │              │
+     │             │               │                    │               │              │
+     │             │               │                    │               │              │
+ ── 7. Return catalog ────────────────────────────────────────────────────────────────────
+     │             │               │                    │               │              │
+     │             │               │  Catalog response  │               │              │
+     │             │               │<───────────────────│               │              │
+     │             │               │                    │               │              │
 ```
+
+Note: Machine A's Identity Hub and DID Server (right side) are not called in this direction — they hold Machine A's own credentials and issuer key, which would be used when Machine A acts as the consumer. The flow is fully symmetric: when Machine A requests Machine B's catalog, the roles mirror and Machine A's side becomes active.
 
 ## Token Structure
 
@@ -189,15 +199,15 @@ The SI (Self-Issued) token uses a **token-in-token** pattern:
 │    exp: ...                                                  │
 │                                                              │
 │    token: ┌─ Inner JWT (Access Token) ────────────────────┐  │
-│           │                                                │  │
-│           │  Payload: {                                     │  │
-│           │    scope: "org.eclipse.edc.vc.type:             │  │
-│           │            MembershipCredential:read"           │  │
-│           │  }                                              │  │
-│           │                                                 │  │
-│           │  Tells the provider what credential             │  │
-│           │  to request from the consumer's wallet          │  │
-│           └─────────────────────────────────────────────────┘  │
+│           │                                               │  │
+│           │  Payload: {                                   │  │
+│           │    scope: "org.eclipse.edc.vc.type:           │  │
+│           │            MembershipCredential:read"         │  │
+│           │  }                                            │  │
+│           │                                               │  │
+│           │  Tells the provider what credential           │  │
+│           │  to request from the consumer's wallet        │  │
+│           └───────────────────────────────────────────────┘  │
 │  }                                                           │
 │                                                              │
 │  Signed with: Machine B's Ed25519 private key                │
@@ -220,6 +230,9 @@ Machine A trusts Machine B because:
      → issuer is in A's TRUSTED_ISSUER_DIDS list
      → signature verified via issuer DID resolution
 
+         Machine B                                       Machine A
+  ─────────────────────────                     ─────────────────────
+
   ┌─────────────┐     signs      ┌──────────────────────┐
   │ Issuer key  │───────────────>│ MembershipCredential │
   │ (P-256)     │                │ (VC JWT)             │
@@ -232,10 +245,19 @@ Machine A trusts Machine B because:
         │ DID resolution                  │ stored in
         │                                 │
   ┌─────────────┐                ┌──────────────────────┐
-  │ Issuer DID  │                │ Identity Hub         │
-  │ document    │                │ (wallet)             │
-  │ nginx:9876  │                │ port 7091/7093       │
-  └─────────────┘                └──────────────────────┘
+  │ Issuer DID  │                │ Identity Hub         │       ┌──────────────┐
+  │ document    │                │ (wallet)             │       │ Control Plane│
+  │ nginx:9876  │                │ port 7091/7093       │       │              │
+  └─────────────┘                └──────────────────────┘       │ Verifies all │
+                                          │                     │ three checks │
+        3. A resolves issuer DID ─────────│──── 1. A resolves ──│──────────────│
+           to get P-256 public key        │        B's DID to   │              │
+           and verify VC signature        │        verify SI    └──────────────┘
+                                          │        token
+                                          │
+                                 2. A calls B's
+                                    CredentialService
+                                    to get the VC
 ```
 
 ## Key Verification Summary
