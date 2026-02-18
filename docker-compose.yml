@@ -219,6 +219,42 @@ services:
       timeout: 5s
       retries: 10
 
+  participant-1-dashboard:
+    build: ./dashboard
+    container_name: participant-1-dashboard
+    ports:
+      - "3000:80"
+    environment:
+      CP_HOST: participant-1-controlplane
+      CP_MGMT_PORT: "19193"
+      CP_HEALTH_PORT: "18181"
+      DP_HOST: participant-1-dataplane
+      DP_HEALTH_PORT: "38181"
+      DP_PUBLIC_PORT: "38185"
+      IH_HOST: participant-1-identityhub
+      IH_HEALTH_PORT: "7090"
+    depends_on:
+      participant-1-controlplane:
+        condition: service_healthy
+
+  participant-2-dashboard:
+    build: ./dashboard
+    container_name: participant-2-dashboard
+    ports:
+      - "3001:80"
+    environment:
+      CP_HOST: participant-2-controlplane
+      CP_MGMT_PORT: "29193"
+      CP_HEALTH_PORT: "28181"
+      DP_HOST: participant-2-dataplane
+      DP_HEALTH_PORT: "48181"
+      DP_PUBLIC_PORT: "48185"
+      IH_HOST: participant-2-identityhub
+      IH_HEALTH_PORT: "7080"
+    depends_on:
+      participant-2-controlplane:
+        condition: service_healthy
+
   http-receiver:
     image: python:3-alpine
     container_name: http-receiver

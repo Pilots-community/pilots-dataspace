@@ -6,31 +6,31 @@ server {
 
     # Control plane management API
     location /api/management/ {
-        proxy_pass http://controlplane:19193/management/;
+        proxy_pass http://${CP_HOST}:${CP_MGMT_PORT}/management/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
 
     # Health endpoints
     location /api/health/cp {
-        proxy_pass http://controlplane:18181/api/check/health;
+        proxy_pass http://${CP_HOST}:${CP_HEALTH_PORT}/api/check/health;
     }
     location /api/health/dp {
-        proxy_pass http://dataplane:38181/api/check/health;
+        proxy_pass http://${DP_HOST}:${DP_HEALTH_PORT}/api/check/health;
     }
     location /api/health/ih {
-        proxy_pass http://identityhub:7090/api/check/health;
+        proxy_pass http://${IH_HOST}:${IH_HEALTH_PORT}/api/check/health;
     }
 
     # Data plane public API (for EDR data fetch)
     # Browser sends token via X-Edr-Token; nginx converts to Authorization: Bearer
     location = /api/public {
-        proxy_pass http://dataplane:38185/public;
+        proxy_pass http://${DP_HOST}:${DP_PUBLIC_PORT}/public;
         proxy_set_header Host $host;
         proxy_set_header Authorization "Bearer $http_x_edr_token";
     }
     location /api/public/ {
-        proxy_pass http://dataplane:38185/public/;
+        proxy_pass http://${DP_HOST}:${DP_PUBLIC_PORT}/public/;
         proxy_set_header Host $host;
         proxy_set_header Authorization "Bearer $http_x_edr_token";
     }
