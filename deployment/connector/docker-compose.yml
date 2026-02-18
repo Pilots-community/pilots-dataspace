@@ -157,6 +157,15 @@ services:
       timeout: 5s
       retries: 10
 
+  dashboard:
+    build: ../../dashboard
+    container_name: dashboard
+    ports:
+      - "3000:80"
+    depends_on:
+      controlplane:
+        condition: service_healthy
+
   http-receiver:
     image: python:3-alpine
     container_name: http-receiver
