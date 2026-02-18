@@ -75,7 +75,6 @@ This project supports three deployment modes. The dev setup (documented below) r
 | Mode | Location | Use case |
 |------|----------|----------|
 | **Dev (single machine)** | `docker-compose.yml` (root) | Local development — 2 participants on one machine, Docker-internal networking. Documented in this README. |
-| **Distributed (2 participants per machine)** | [`deployment/distributed/`](deployment/distributed/README.md) | Multi-machine testing — both participants run on each machine, public IPs for cross-machine communication. |
 | **Standalone connector (1 per machine)** | [`deployment/connector/`](deployment/connector/README.md) | Production-like — one self-contained connector stack per machine, each with independent keys and its own VC issuer. |
 
 The **standalone connector** deployment is the target for real-world use: each organization runs one connector on their own infrastructure. See its [README](deployment/connector/README.md) for full setup instructions, prerequisites, and an end-to-end walkthrough.
