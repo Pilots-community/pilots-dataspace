@@ -28,41 +28,221 @@ The **issuer DID** signs Verifiable Credentials. Its EC P-256 key pair is genera
 
 ---
 
-## Setup Phase (what `seed.sh` does)
+## Setup Phase
+
+Setting up a machine has four steps. Each step feeds into the next:
 
 ```
-generate-keys.sh                         seed.sh
-──────────────                           ────────
+ ── Step 1: generate-keys.sh ─────────────────────────────────────────────────────
 
-1. Generate EC P-256 key pair            2. Sign a MembershipCredential (VC)
-   issuer_private.pem                       issuer signs: "participant DID
-   issuer_public.pem                        is an Active Member"
+   Generates key material on disk. Run once per machine.
 
-                                         3. Create participant in Identity Hub
-                                            → auto-generates Ed25519 key pair
-                                            → registers service endpoints
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │                                                                         │
+   │   generate-keys.sh                                                      │
+   │       │                                                                 │
+   │       ├──→ deployment/assets/issuer_private.pem    (EC P-256 key pair)  │
+   │       │    deployment/assets/issuer_public.pem      for signing VCs     │
+   │       │                                                                 │
+   │       └──→ config/certs/private-key.pem            (key pair for        │
+   │            config/certs/public-key.pem              Data Plane EDR      │
+   │                                                     token signing)      │
+   │                                                                         │
+   └─────────────────────────────────────────────────────────────────────────┘
 
-                                         4. Publish participant DID document
-                                            → Ed25519 public key
-                                            → CredentialService endpoint
-                                            → ProtocolEndpoint
 
-                                         5. Store STS client secret in Vault
-                                            → CP can request tokens from STS
+ ── Step 2: ./gradlew dockerize ──────────────────────────────────────────────────
 
-                                         6. Store MembershipCredential in wallet
-                                            → Identity Hub can present it
+   Builds three Docker images from source.
 
-                                         7. Update issuer DID document on nginx
-                                            → EC P-256 public key
-                                            → other machines can verify VCs
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │                                                                         │
+   │   runtimes/controlplane/  ──→  controlplane:latest                      │
+   │   runtimes/dataplane/     ──→  dataplane:latest                         │
+   │   runtimes/identityhub/   ──→  identityhub:latest                       │
+   │                                                                         │
+   │   Each image: eclipse-temurin JRE + shadow JAR + health check           │
+   │                                                                         │
+   └─────────────────────────────────────────────────────────────────────────┘
+
+
+ ── Step 3: docker compose up -d ─────────────────────────────────────────────────
+
+   Starts 7 containers with health checks. Waits for dependencies.
+
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │                                                                         │
+   │   ┌──────────┐  ┌──────────┐                                           │
+   │   │ postgres │  │  vault   │  ← start first (no dependencies)          │
+   │   │ (15432)  │  │  (8200)  │                                           │
+   │   └────┬─────┘  └────┬─────┘                                           │
+   │        │              │                                                 │
+   │        ▼              ▼                                                 │
+   │   ┌────────────┐  ┌────────────┐                                       │
+   │   │ identityhub│  │ did-server │  ← wait for postgres + vault healthy  │
+   │   │ (7090-7096)│  │   (9876)   │                                       │
+   │   └────┬───────┘  └────────────┘                                       │
+   │        │                                                                │
+   │        ▼                                                                │
+   │   ┌──────────────┐                                                      │
+   │   │ controlplane │  ← wait for identityhub + did-server healthy         │
+   │   │(19192-19194) │                                                      │
+   │   └────┬─────────┘                                                      │
+   │        │                                                                │
+   │        ▼                                                                │
+   │   ┌──────────────┐  ┌───────────────┐                                   │
+   │   │  dataplane   │  │ http-receiver │  ← wait for controlplane healthy  │
+   │   │(38181-38185) │  │    (4000)     │                                   │
+   │   └──────────────┘  └───────────────┘                                   │
+   │                                                                         │
+   └─────────────────────────────────────────────────────────────────────────┘
+
+   Config injected via environment variables:
+     MY_PUBLIC_HOST     → DID identifiers, callback URLs, DP public URL
+     TRUSTED_ISSUER_DIDS → trusted issuer registry in Control Plane
+
+
+ ── Step 4: seed.sh ──────────────────────────────────────────────────────────────
+
+   Seeds identity data into the running containers.
+
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │                                                                         │
+   │   seed.sh reads: deployment/assets/issuer_private.pem                   │
+   │                                                                         │
+   │                                                                         │
+   │   4a. Generate MembershipCredential (VC)                                │
+   │                                                                         │
+   │       issuer_private.pem ──→ sign JWT ──→ VC                            │
+   │                                                                         │
+   │       ┌─ VC JWT ─────────────────────────────────────────────┐          │
+   │       │  issuer:  did:web:<host>%3A9876  (issuer DID)        │          │
+   │       │  subject: did:web:<host>%3A7093  (participant DID)   │          │
+   │       │  type:    MembershipCredential                       │          │
+   │       │  claims:  "Active Member of dataspace-pilots"        │          │
+   │       │  signed:  EC P-256 / ES256                           │          │
+   │       └──────────────────────────────────────────────────────┘          │
+   │                                                                         │
+   │                                                                         │
+   │   4b. Create participant context in Identity Hub                        │
+   │                                                                         │
+   │       seed.sh ──POST──→ Identity Hub (7092)                             │
+   │                         /api/identity/v1alpha/participants               │
+   │                                                                         │
+   │       Identity Hub:                                                     │
+   │         ├── generates Ed25519 key pair                                  │
+   │         │     private key → Vault                                       │
+   │         │     public key  → DID document                                │
+   │         ├── registers service endpoints:                                │
+   │         │     CredentialService → http://<host>:7091/...                │
+   │         │     ProtocolEndpoint  → http://<host>:19194/protocol          │
+   │         └── returns clientId + clientSecret (for STS auth)              │
+   │                                                                         │
+   │                                                                         │
+   │   4c. Publish participant DID document                                  │
+   │                                                                         │
+   │       seed.sh ──POST──→ Identity Hub (7092)                             │
+   │                         /api/identity/v1alpha/participants/<DID>/        │
+   │                         dids/publish                                     │
+   │                                                                         │
+   │       Result: DID document served at                                    │
+   │       http://<host>:7093/.well-known/did.json                           │
+   │                                                                         │
+   │       ┌─ Participant DID Document ───────────────────────────┐          │
+   │       │  id: did:web:<host>%3A7093                           │          │
+   │       │  verificationMethod:                                 │          │
+   │       │    - Ed25519 public key (auto-generated)             │          │
+   │       │  service:                                            │          │
+   │       │    - CredentialService → port 7091                   │          │
+   │       │    - ProtocolEndpoint  → port 19194                  │          │
+   │       └──────────────────────────────────────────────────────┘          │
+   │                                                                         │
+   │                                                                         │
+   │   4d. Store STS client secret in Vault                                  │
+   │                                                                         │
+   │       seed.sh ──POST──→ Control Plane (19193)                           │
+   │                         /management/v3/secrets                           │
+   │                                                                         │
+   │       Stores the clientSecret from step 4b so the                       │
+   │       Control Plane can authenticate to the STS                         │
+   │       when requesting SI tokens.                                        │
+   │                                                                         │
+   │       CP (19193) ──→ Vault (8200) ──→ stores secret                     │
+   │                                                                         │
+   │                                                                         │
+   │   4e. Store MembershipCredential in wallet                              │
+   │                                                                         │
+   │       seed.sh ──POST──→ Identity Hub (7092)                             │
+   │                         /api/identity/v1alpha/participants/<DID>/        │
+   │                         credentials                                     │
+   │                                                                         │
+   │       The VC JWT from step 4a is now in the wallet.                     │
+   │       Identity Hub can present it when other connectors                 │
+   │       request it during DCP authentication.                             │
+   │                                                                         │
+   │                                                                         │
+   │   4f. Update issuer DID document on nginx                               │
+   │                                                                         │
+   │       seed.sh ──docker cp──→ did-server (nginx)                         │
+   │                              /usr/share/nginx/html/                     │
+   │                              .well-known/did.json                       │
+   │                                                                         │
+   │       Result: issuer DID document served at                             │
+   │       http://<host>:9876/.well-known/did.json                           │
+   │                                                                         │
+   │       ┌─ Issuer DID Document ────────────────────────────────┐          │
+   │       │  id: did:web:<host>%3A9876                           │          │
+   │       │  verificationMethod:                                 │          │
+   │       │    - EC P-256 public key (from generate-keys.sh)     │          │
+   │       │  assertionMethod:                                    │          │
+   │       │    - same key (used for VC signing)                  │          │
+   │       └──────────────────────────────────────────────────────┘          │
+   │                                                                         │
+   └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-After setup, the machine has:
-- A participant DID document at `http://host:7093/.well-known/did.json` (public key + endpoints)
-- An issuer DID document at `http://host:9876/.well-known/did.json` (public key for VC verification)
-- A MembershipCredential in the wallet, signed by the issuer
-- Secrets in Vault for STS authentication
+### After setup, the machine is ready
+
+```
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │  Machine (e.g. 192.168.1.50)                                           │
+  │                                                                         │
+  │  ┌─────────────┐   ┌──────────────────┐   ┌──────────────────────────┐  │
+  │  │ DID Server  │   │  Identity Hub    │   │  Control Plane           │  │
+  │  │ (nginx)     │   │                  │   │                          │  │
+  │  │ port 9876   │   │  port 7091-7096  │   │  port 19193/19194       │  │
+  │  │             │   │                  │   │                          │  │
+  │  │ Serves:     │   │  Stores:         │   │  Knows:                 │  │
+  │  │  issuer DID │   │   MembershipCred │   │   STS token URL         │  │
+  │  │  document   │   │   (wallet)       │   │   STS client secret     │  │
+  │  │  (P-256     │   │                  │   │   (via Vault)           │  │
+  │  │   pub key)  │   │  Serves:         │   │                         │  │
+  │  │             │   │   participant    │   │  Configured:            │  │
+  │  │ Verifiable  │   │   DID document   │   │   TRUSTED_ISSUER_DIDS   │  │
+  │  │ by anyone   │   │   (Ed25519       │   │   (who to trust)        │  │
+  │  │ over HTTP   │   │    pub key +     │   │                         │  │
+  │  │             │   │    endpoints)    │   │  Ready for:             │  │
+  │  └─────────────┘   │                  │   │   DSP protocol          │  │
+  │                     │  Presents:       │   │   catalog/negotiate/    │  │
+  │                     │   VCs on request │   │   transfer              │  │
+  │                     │   via Cred API   │   │                         │  │
+  │                     └──────────────────┘   └──────────────────────────┘  │
+  │                                                                         │
+  │  ┌─────────────┐   ┌──────────────────┐                                 │
+  │  │   Vault     │   │   Data Plane     │                                 │
+  │  │   (8200)    │   │  port 38185      │                                 │
+  │  │             │   │                  │                                 │
+  │  │  Stores:    │   │  Has:            │                                 │
+  │  │   Ed25519   │   │   token keys     │                                 │
+  │  │   priv key  │   │   (config/certs/)│                                 │
+  │  │   STS       │   │                  │                                 │
+  │  │   client    │   │  Ready for:      │                                 │
+  │  │   secret    │   │   pull & push    │                                 │
+  │  │             │   │   transfers      │                                 │
+  │  └─────────────┘   └──────────────────┘                                 │
+  │                                                                         │
+  └─────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
