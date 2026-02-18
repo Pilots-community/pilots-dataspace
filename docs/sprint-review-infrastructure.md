@@ -27,7 +27,7 @@ Each machine runs a fully self-contained stack:
 | Trust management | Done | Comma-separated trusted issuer list per connector (`TRUSTED_ISSUER_DIDS`) |
 | Wallet (storage) | Done | IdentityHub stores VCs and presents them on DSP requests |
 
-### Data Exchange (fully tested E2E across machines)
+### Data Exchange
 
 | Flow | Status |
 |------|--------|
