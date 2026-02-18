@@ -7,14 +7,14 @@ A downstream project based on [Eclipse Dataspace Components (EDC)](https://githu
 - Java 17+
 - Gradle (wrapper included)
 - Docker and Docker Compose (for containerized deployment)
-- `jq` and `curl` (for running the seed script)
+- `jq` and `curl` (for running E2E tests and manual seeding)
 - Python 3 with the `cryptography` library (`pip install cryptography`)
 
 > **Windows users:** The setup scripts and tooling require a bash shell. Use [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) (recommended) or Git Bash.
 
 ## Quick Start
 
-Run a single command to generate keys, build images, start all services, and seed identity data:
+Run a single command to generate keys, build images, and start all services (identity seeding happens automatically on startup):
 
 ```bash
 ./setup.sh
@@ -126,16 +126,13 @@ Build the Docker images and start all services:
 docker compose up -d
 ```
 
-Wait for all services to become healthy, then seed the identity data:
+Identity seeding is automatic — each IdentityHub's `participant-bootstrap` extension creates the participant context, publishes the DID, stores the STS client secret in vault, and loads the MembershipCredential on first startup. Once all health checks pass, the dataspace is ready.
 
 ```bash
-# Wait for health checks to pass
 docker compose ps  # all services should show "healthy"
-
-# Seed participant contexts and credentials into IdentityHubs,
-# and store STS client secrets in connector vaults
-./deployment/seed.sh
 ```
+
+> **Manual seeding fallback:** If needed, `./deployment/seed.sh` can still be used to seed identity data manually (e.g., for native runs or re-seeding).
 
 All runtimes will start and register as healthy. Ports are mapped 1:1 to the host, so health checks and management API calls use the same `localhost` URLs as native mode.
 
@@ -633,6 +630,10 @@ Provides three capabilities missing from the base `dataplane-base-bom`:
 ### `extensions/superuser-seed`
 
 Seeds a "super-user" admin participant context into IdentityHub at startup. This bootstraps participant management via the Identity API.
+
+### `extensions/participant-bootstrap`
+
+Auto-bootstraps participant identity on IdentityHub startup. Creates the participant context, publishes the `did:web` DID document, stores the STS client secret in the shared vault, and loads the pre-signed MembershipCredential. Idempotent — skips all steps if the context already exists. Configured via `edc.ih.participant.dsp.url` and `edc.ih.participant.credential.path`.
 
 ### `extensions/did-example-resolver`
 

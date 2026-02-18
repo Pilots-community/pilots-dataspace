@@ -65,6 +65,7 @@ services:
       - "7096:7096"
     volumes:
       - ./config/docker/identityhub-participant-1.properties:/app/config/identityhub-participant-1.properties:ro
+      - ./deployment/assets/credentials/participant-1/membership-credential.json:/app/credentials/membership-credential.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,6 +93,7 @@ services:
       - "7086:7086"
     volumes:
       - ./config/docker/identityhub-participant-2.properties:/app/config/identityhub-participant-2.properties:ro
+      - ./deployment/assets/credentials/participant-2/membership-credential.json:/app/credentials/membership-credential.json:ro
     depends_on:
       postgres:
         condition: service_healthy

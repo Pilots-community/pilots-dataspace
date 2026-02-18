@@ -9,6 +9,7 @@ plugins {
 
 dependencies {
     runtimeOnly(project(":extensions:superuser-seed"))
+    runtimeOnly(project(":extensions:participant-bootstrap"))
     runtimeOnly(project(":extensions:did-example-resolver"))
     runtimeOnly(libs.edc.bom.identityhub)
 
