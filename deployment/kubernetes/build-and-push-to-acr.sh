@@ -9,7 +9,6 @@ ACR_NAME="${1:-pilotsdataspaceregistry}"
 ACR_LOGIN_SERVER="${ACR_NAME}.azurecr.io"
 
 # Colors for output
-RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
@@ -21,7 +20,7 @@ echo -e "${GREEN}======================================${NC}"
 
 # Login to ACR
 echo -e "\n${YELLOW}Logging in to ACR...${NC}"
-az acr login --name ${ACR_NAME}
+az acr login --name "${ACR_NAME}"
 
 # Build Gradle projects
 echo -e "\n${YELLOW}Building Java applications with Gradle...${NC}"
@@ -31,28 +30,28 @@ echo -e "\n${YELLOW}Building Java applications with Gradle...${NC}"
 echo -e "\n${YELLOW}Building and pushing IdentityHub...${NC}"
 docker build \
   --build-arg JAR=runtimes/identityhub/build/libs/identityhub.jar \
-  -t ${ACR_LOGIN_SERVER}/identityhub:latest \
+  -t "${ACR_LOGIN_SERVER}/identityhub:latest" \
   -f runtimes/identityhub/src/main/docker/Dockerfile \
   .
-docker push ${ACR_LOGIN_SERVER}/identityhub:latest
+docker push "${ACR_LOGIN_SERVER}/identityhub:latest"
 
 # Build and push Control Plane
 echo -e "\n${YELLOW}Building and pushing Control Plane...${NC}"
 docker build \
   --build-arg JAR=runtimes/controlplane/build/libs/controlplane.jar \
-  -t ${ACR_LOGIN_SERVER}/controlplane:latest \
+  -t "${ACR_LOGIN_SERVER}/controlplane:latest" \
   -f runtimes/controlplane/src/main/docker/Dockerfile \
   .
-docker push ${ACR_LOGIN_SERVER}/controlplane:latest
+docker push "${ACR_LOGIN_SERVER}/controlplane:latest"
 
 # Build and push Data Plane
 echo -e "\n${YELLOW}Building and pushing Data Plane...${NC}"
 docker build \
   --build-arg JAR=runtimes/dataplane/build/libs/dataplane.jar \
-  -t ${ACR_LOGIN_SERVER}/dataplane:latest \
+  -t "${ACR_LOGIN_SERVER}/dataplane:latest" \
   -f runtimes/dataplane/src/main/docker/Dockerfile \
   .
-docker push ${ACR_LOGIN_SERVER}/dataplane:latest
+docker push "${ACR_LOGIN_SERVER}/dataplane:latest"
 
 # Import base images to ACR (if not already imported)
 echo -e "\n${YELLOW}Importing base images to ACR...${NC}"
@@ -60,7 +59,7 @@ echo -e "\n${YELLOW}Importing base images to ACR...${NC}"
 # Import postgres
 echo "Importing postgres:16-alpine..."
 az acr import \
-  --name ${ACR_NAME} \
+  --name "${ACR_NAME}" \
   --source docker.io/library/postgres:16-alpine \
   --image postgres:16-alpine \
   --force || echo "postgres image already exists or import failed"
@@ -68,7 +67,7 @@ az acr import \
 # Import nginx
 echo "Importing nginx:alpine..."
 az acr import \
-  --name ${ACR_NAME} \
+  --name "${ACR_NAME}" \
   --source docker.io/library/nginx:alpine \
   --image nginx:alpine \
   --force || echo "nginx image already exists or import failed"
@@ -76,7 +75,7 @@ az acr import \
 # Import python
 echo "Importing python:3-alpine..."
 az acr import \
-  --name ${ACR_NAME} \
+  --name "${ACR_NAME}" \
   --source docker.io/library/python:3-alpine \
   --image python:3-alpine \
   --force || echo "python image already exists or import failed"
@@ -84,7 +83,7 @@ az acr import \
 # Import vault
 echo "Importing hashicorp/vault:1.15..."
 az acr import \
-  --name ${ACR_NAME} \
+  --name "${ACR_NAME}" \
   --source docker.io/hashicorp/vault:1.15 \
   --image vault:1.15 \
   --force || echo "vault image already exists or import failed"
