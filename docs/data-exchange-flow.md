@@ -8,32 +8,32 @@ Data exchange has three phases: **catalog discovery**, **contract negotiation**,
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                  Control Plane (19193 / 19194)                │
+│                  Control Plane (19193 / 19194)               │
 │                                                              │
 │  Management API (19193)          DSP Protocol (19194)        │
 │  ┌────────────────────────┐      ┌─────────────────────────┐ │
-│  │ Your commands:          │      │ Machine-to-machine:      │ │
-│  │  - create asset         │      │  - catalog exchange      │ │
-│  │  - create policy        │      │  - negotiation messages  │ │
-│  │  - start negotiation    │      │  - transfer coordination │ │
-│  │  - start transfer       │      │  - callbacks             │ │
-│  │  - get EDR              │      │                          │ │
+│  │ Your commands:         │      │ Machine-to-machine:     │ │
+│  │  - create asset        │      │  - catalog exchange     │ │
+│  │  - create policy       │      │  - negotiation messages │ │
+│  │  - start negotiation   │      │  - transfer coordination│ │
+│  │  - start transfer      │      │  - callbacks            │ │
+│  │  - get EDR             │      │                         │ │
 │  └────────────────────────┘      └─────────────────────────┘ │
 │                                                              │
 │  Stores: assets, policies, contract definitions,             │
-│          agreements, transfer process state                   │
-│          (all in PostgreSQL)                                  │
+│          agreements, transfer process state                  │
+│          (all in PostgreSQL)                                 │
 └──────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────┐
-│                  Data Plane (38181 / 38185)                   │
+│                  Data Plane (38181 / 38185)                  │
 │                                                              │
 │  Control API (38182)             Public API (38185)          │
 │  ┌────────────────────────┐      ┌─────────────────────────┐ │
-│  │ From Control Plane:     │      │ Consumer fetches here:   │ │
-│  │  - "prepare source X"  │      │  - GET /public           │ │
-│  │  - "push data to Y"    │      │  - Authorization: Bearer │ │
-│  └────────────────────────┘      │    <EDR token>           │ │
+│  │ From Control Plane:    │      │ Consumer fetches here:  │ │
+│  │  - "prepare source X"  │      │  - GET /public          │ │
+│  │  - "push data to Y"    │      │  - Authorization: Bearer│ │
+│  └────────────────────────┘      │    <EDR token>          │ │
 │                                  └─────────────────────────┘ │
 │                                                              │
 │  Pull: serves data via public API with token auth            │
@@ -259,8 +259,8 @@ body: { contractId,
        │                                       │         (asset's
        │                                       │          baseUrl)
        │                                       │               │
-       │                 actual data            │               │
-       │<─────────────────────────────────────────────────────│
+       │                 actual data           │               │
+       │<───────────────────────────────────────────────────── │
        │                                       │               │
 ```
 
@@ -399,15 +399,15 @@ Provider                                                    Consumer
                                    (agreement ID + type)
 
     ┌─────── PULL ──────┐     ┌─────── PUSH ──────────┐
-    │                    │     │                        │
-    │ Prepare DP,        │     │ DP fetches data,      │
-    │ send EDR to        │     │ POSTs to consumer's   │
-    │ consumer           │     │ destination URL        │
-    │                    │     │                        │
-    │ Consumer fetches   │     │ Transfer completes     │
-    │ from DP public API │     │ automatically          │
-    │ using EDR token    │     │                        │
-    └────────────────────┘     └────────────────────────┘
+    │                    │    │                       │
+    │ Prepare DP,        │    │ DP fetches data,      │
+    │ send EDR to        │    │ POSTs to consumer's   │
+    │ consumer           │    │ destination URL       │
+    │                    │    │                       │
+    │ Consumer fetches   │    │ Transfer completes    │
+    │ from DP public API │    │ automatically         │
+    │ using EDR token    │    │                       │
+    └────────────────────┘    └───────────────────────┘
 
                                    7. Data received ✓
 ```
@@ -423,13 +423,13 @@ Each machine has three independent key pairs used at different stages:
 │                                                                  │
 │  Participant key (Ed25519)         Issuer key (EC P-256)         │
 │  ┌──────────────────────────┐      ┌──────────────────────────┐  │
-│  │ Generated by:             │      │ Generated by:             │  │
-│  │   Identity Hub            │      │   generate-keys.sh        │  │
-│  │ Stored in: Vault          │      │ Stored in:                │  │
-│  │ Signs: SI tokens          │      │   deployment/assets/      │  │
-│  │ Verified via:             │      │ Signs: MembershipCred     │  │
-│  │   did:web:host%3A7093     │      │ Verified via:             │  │
-│  │                           │      │   did:web:host%3A9876     │  │
+│  │ Generated by:            │      │ Generated by:            │  │
+│  │   Identity Hub           │      │   generate-keys.sh       │  │
+│  │ Stored in: Vault         │      │ Stored in:               │  │
+│  │ Signs: SI tokens         │      │   deployment/assets/     │  │
+│  │ Verified via:            │      │ Signs: MembershipCred    │  │
+│  │   did:web:host%3A7093    │      │ Verified via:            │  │
+│  │                          │      │   did:web:host%3A9876    │  │
 │  │ "Who I am in DSP"        │      │ "I'm a trusted member"   │  │
 │  └──────────────────────────┘      └──────────────────────────┘  │
 │                                                                  │
@@ -440,16 +440,16 @@ Each machine has three independent key pairs used at different stages:
 │                                                                  │
 │  Data Plane token key (configurable)                             │
 │  ┌──────────────────────────┐                                    │
-│  │ Generated by:             │                                    │
-│  │   generate-keys.sh        │                                    │
-│  │ Stored in: config/certs/  │                                    │
-│  │ Signs: EDR tokens         │                                    │
-│  │   (private-key.pem)       │                                    │
-│  │ Verifies: EDR tokens      │                                    │
-│  │   (public-key.pem)        │                                    │
-│  │                           │                                    │
-│  │ "Consumer can fetch       │                                    │
-│  │  this specific asset"     │                                    │
+│  │ Generated by:            │                                    │
+│  │   generate-keys.sh       │                                    │
+│  │ Stored in: config/certs/ │                                    │
+│  │ Signs: EDR tokens        │                                    │
+│  │   (private-key.pem)      │                                    │
+│  │ Verifies: EDR tokens     │                                    │
+│  │   (public-key.pem)       │                                    │
+│  │                          │                                    │
+│  │ "Consumer can fetch      │                                    │
+│  │  this specific asset"    │                                    │
 │  └──────────────────────────┘                                    │
 │                                                                  │
 │  Used in: pull transfers only (EDR token for data fetch)         │
