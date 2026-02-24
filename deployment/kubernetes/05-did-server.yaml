@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: pilots-dataspace
+data:
+  default.conf: |
+    server {
+        listen 9876;
+        server_name _;
+
+        location /.well-known/did.json {
+            root /usr/share/nginx/html;
+            default_type application/json;
+            add_header Access-Control-Allow-Origin *;
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: did-server
+  namespace: pilots-dataspace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: did-server
+  template:
+    metadata:
+      labels:
+        app: did-server
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 9876
+          name: http
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d
+        - name: did-json
+          mountPath: /usr/share/nginx/html/.well-known
+        livenessProbe:
+          httpGet:
+            path: /.well-known/did.json
+            port: 9876
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /.well-known/did.json
+            port: 9876
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-config
+      - name: did-json
+        configMap:
+          name: did-json
+          # Note: You need to create this ConfigMap with your did.json content
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: did-server
+  namespace: pilots-dataspace
+spec:
+  selector:
+    app: did-server
+  ports:
+  - port: 9876
+    targetPort: 9876
+    name: http
+  type: ClusterIP
