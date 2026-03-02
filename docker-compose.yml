@@ -275,6 +275,11 @@ services:
     depends_on:
       participant-1-controlplane:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:80/"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   participant-2-dashboard:
     build: ./dashboard
@@ -293,6 +298,11 @@ services:
     depends_on:
       participant-2-controlplane:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:80/"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   http-receiver:
     image: python:3-alpine
