@@ -67,15 +67,9 @@ Private keys never leave the machine. Public keys are shared via DID documents s
 
 ### Multiple Trusted Issuers
 
-Since each machine is its own VC issuer, all machines must trust each other's issuer DIDs. The `TRUSTED_ISSUER_DIDS` environment variable is a comma-separated list of all issuer DIDs in the dataspace, passed to the Control Plane via `-Dedc.demo.dcp.trusted.issuer.dids`.
+Since each machine is its own VC issuer, all machines must trust each other's issuer DIDs. Trusted issuers are managed at runtime via the REST API (`/v1/trusted-issuers`) or the **Trusted Issuers** page in the dashboard — no restart required.
 
-Each machine's issuer DID follows the pattern `did:web:<host>%3A9876`, where `<host>` is the machine's `MY_PUBLIC_HOST` value. For example, with two machines at `192.168.1.50` and `192.168.1.51`:
-
-```
-TRUSTED_ISSUER_DIDS=did:web:192.168.1.50%3A9876,did:web:192.168.1.51%3A9876
-```
-
-This value must be identical on all machines in the dataspace.
+The `seed.sh` script automatically registers this machine's own issuer DID. To trust a remote machine, add its issuer DID (e.g. `did:web:192.168.1.51%3A9876`) via the dashboard along with its DSP endpoint and participant DID, which enables one-click catalog browsing.
 
 ### `MY_PUBLIC_HOST`
 
@@ -163,9 +157,6 @@ Edit `.env` with your values:
 ```bash
 # This machine's routable IP or hostname
 MY_PUBLIC_HOST=192.168.1.50
-
-# Comma-separated list of ALL issuer DIDs in the dataspace (including this machine)
-TRUSTED_ISSUER_DIDS=did:web:192.168.1.50%3A9876,did:web:192.168.1.51%3A9876
 ```
 
 ### 4. Start the stack
@@ -180,7 +171,7 @@ Wait for all containers to be healthy:
 docker ps
 ```
 
-All 7 containers should show `(healthy)`. This typically takes 30-60 seconds.
+All 8 containers should show `(healthy)`. This typically takes 30-60 seconds.
 
 ### 5. Seed identity data
 
@@ -195,16 +186,21 @@ The seed script:
 4. Stores the STS client secret in the Control Plane's vault
 5. Stores the MembershipCredential in IdentityHub
 6. Updates the issuer DID document on the DID server (nginx)
+7. Registers this machine's issuer as a trusted issuer in the Control Plane
 
 ### 6. Open the dashboard
 
-The dashboard is available at **http://localhost:3000**. It shows health status for all three services (Control Plane, Data Plane, IdentityHub) and provides a UI for managing assets, policies, contracts, and transfers.
+The dashboard is available at **http://localhost:3000**. It provides a UI for managing assets, policies, contracts, transfers, and trusted issuers, plus health status for all three services (Control Plane, Data Plane, IdentityHub).
+
+Key pages:
+- **Trusted Issuers** — add remote machines' issuer DIDs (with DSP endpoint and participant DID) so the connector trusts their VCs
+- **Catalog** — browse remote connectors' catalogs. Trusted issuers with connector details appear as clickable quick-select buttons that prefill the counter party fields
 
 No extra configuration is needed — the dashboard image uses ENV defaults that match the standalone service names (`controlplane`, `dataplane`, `identityhub`) and ports.
 
 ### 7. Repeat on every other machine
 
-Each machine generates its own keys, builds (or loads) images, starts its stack, and runs its own seed script. The only shared configuration is `TRUSTED_ISSUER_DIDS` — all machines must list the same set of issuer DIDs.
+Each machine generates its own keys, builds (or loads) images, starts its stack, and runs its own seed script. After seeding, use the **Trusted Issuers** page in the dashboard to add each remote machine's issuer DID (with its DSP endpoint and participant DID) so the connectors trust each other.
 
 ### 8. Verify cross-machine connectivity
 
@@ -267,6 +263,42 @@ curl -X POST http://localhost:19193/management/v3/contractdefinitions \
     "assetsSelector": []
   }'
 ```
+
+### On Both Machines: Trust Each Other's Issuers
+
+Before Machine B can request Machine A's catalog, both machines must trust each other's issuer DIDs. You can do this via the **Trusted Issuers** page in the dashboard (http://localhost:3000) or via the API:
+
+**On Machine B** — register Machine A's issuer:
+
+```bash
+curl -X POST http://localhost:19193/management/v1/trusted-issuers \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: password" \
+  -d '{
+    "did": "did:web:192.168.1.50%3A9876",
+    "name": "Machine A Issuer",
+    "organization": "Machine A",
+    "dspEndpoint": "http://192.168.1.50:19194/protocol",
+    "participantDid": "did:web:192.168.1.50%3A7093"
+  }'
+```
+
+**On Machine A** — register Machine B's issuer:
+
+```bash
+curl -X POST http://localhost:19193/management/v1/trusted-issuers \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: password" \
+  -d '{
+    "did": "did:web:192.168.1.51%3A9876",
+    "name": "Machine B Issuer",
+    "organization": "Machine B",
+    "dspEndpoint": "http://192.168.1.51:19194/protocol",
+    "participantDid": "did:web:192.168.1.51%3A7093"
+  }'
+```
+
+Once registered, each machine's issuer appears as a clickable button on the **Catalog** page in the dashboard, prefilling the counter party address and ID fields for one-click catalog browsing.
 
 ### On Machine B: Discover, Negotiate, and Fetch (Steps 4-7)
 
@@ -523,13 +555,9 @@ curl http://<HOST>:7093/.well-known/did.json
 ## Adding a Third (or More) Machine
 
 1. Generate keys on the new machine: `./generate-keys.sh`
-2. Update `TRUSTED_ISSUER_DIDS` in `.env` on **all** machines to include the new machine's issuer DID (`did:web:<new-host>%3A9876`)
-3. Restart the control planes on existing machines so they pick up the new trusted issuer:
-   ```bash
-   cd deployment/connector
-   docker compose restart controlplane
-   ```
-4. Start the stack on the new machine and run `seed.sh`
+2. Start the stack on the new machine and run `seed.sh`
+3. On each existing machine's dashboard, go to **Trusted Issuers** and add the new machine's issuer DID (`did:web:<new-host>%3A9876`) with its DSP endpoint and participant DID
+4. On the new machine's dashboard, add each existing machine's issuer DID the same way
 
 ## Resetting a Machine
 
@@ -546,10 +574,9 @@ Then re-run from step 4 of the [Quick Start](#4-start-the-stack). Keys don't nee
 
 ### 401 Unauthorized on catalog/negotiation
 
-- Verify `TRUSTED_ISSUER_DIDS` includes **all** machines' issuer DIDs on **all** machines
+- Verify all remote issuer DIDs are registered via the **Trusted Issuers** page in the dashboard
 - Verify the remote issuer DID document is accessible: `curl http://<remote-host>:9876/.well-known/did.json`
 - Check that `MY_PUBLIC_HOST` is correct and reachable from the other machine's Docker containers
-- After changing `TRUSTED_ISSUER_DIDS`, you must restart the control plane: `docker compose restart controlplane`
 
 ### DID resolution failures
 

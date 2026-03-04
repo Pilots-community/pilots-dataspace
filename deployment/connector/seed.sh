@@ -291,6 +291,43 @@ docker cp /tmp/issuer-did.json did-server:/usr/share/nginx/html/.well-known/did.
 echo "  Verifying: $(curl -s http://localhost:9876/.well-known/did.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
 
 echo ""
+echo "=== Registering Trusted Issuer ==="
+
+# Register this machine's issuer DID so the controlplane trusts VCs it signed.
+# Additional remote issuers can be added via the dashboard or API.
+register_trusted_issuer() {
+  local ISSUER="$1"
+  local NAME="$2"
+  local ORG="$3"
+  local DSP_EP="${4:-}"
+  local PART_DID="${5:-}"
+
+  local BODY="{\"did\": \"${ISSUER}\", \"name\": \"${NAME}\", \"organization\": \"${ORG}\""
+  if [ -n "$DSP_EP" ]; then
+    BODY="${BODY}, \"dspEndpoint\": \"${DSP_EP}\""
+  fi
+  if [ -n "$PART_DID" ]; then
+    BODY="${BODY}, \"participantDid\": \"${PART_DID}\""
+  fi
+  BODY="${BODY}}"
+
+  local HTTP_CODE
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${MGMT}/v1/trusted-issuers" \
+    -H "Content-Type: application/json" \
+    -H "x-api-key: password" \
+    -d "${BODY}")
+
+  if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+    echo " OK"
+  else
+    echo " HTTP ${HTTP_CODE}"
+  fi
+}
+
+echo -n "Registering ${ISSUER_DID}..."
+register_trusted_issuer "${ISSUER_DID}" "Local Issuer" "This Connector" "${DSP}" "${DID}"
+
+echo ""
 echo "=== Seeding Complete ==="
 echo "Connector DID: ${DID}"
 echo "Issuer DID:    ${ISSUER_DID}"

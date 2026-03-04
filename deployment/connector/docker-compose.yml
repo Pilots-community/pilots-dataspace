@@ -1,12 +1,12 @@
 # Standalone connector deployment — one participant per machine.
 #
 # Usage:
-#   cp .env.example .env   # set MY_PUBLIC_HOST + TRUSTED_ISSUER_DIDS
+#   cp .env.example .env   # set MY_PUBLIC_HOST
 #   docker compose up -d
 #   MY_PUBLIC_HOST=<ip> ./seed.sh
 #
 # MY_PUBLIC_HOST is the externally-routable IP or hostname (e.g. a Tailscale IP).
-# TRUSTED_ISSUER_DIDS is a comma-separated list of all issuer DIDs in the dataspace.
+# Trusted issuers are registered at runtime via seed.sh and the dashboard.
 
 services:
 
@@ -104,7 +104,6 @@ services:
       -Dedc.iam.sts.oauth.client.secret.alias=did:web:${MY_PUBLIC_HOST}%3A7093-sts-client-secret
       -Dedc.iam.sts.oauth.token.url=http://identityhub:7096/api/sts/token
       -Dedc.dsp.callback.address=http://${MY_PUBLIC_HOST}:19194/protocol
-      -Dedc.demo.dcp.trusted.issuer.dids=${TRUSTED_ISSUER_DIDS}
       -jar edc-controlplane.jar"
     ports:
       - "18181:18181"
