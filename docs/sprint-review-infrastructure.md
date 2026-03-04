@@ -14,8 +14,23 @@ Each machine runs a fully self-contained stack:
 │  DID Server (nginx)                 │  Serves issuer DID document (public key)
 │  Vault                              │  Secret storage (STS keys, client secrets)
 │  PostgreSQL                         │  Persistent state for CP, DP, IdentityHub
+│  Dashboard                          │  Web UI for connector management
 └─────────────────────────────────────┘
 ```
+
+### Dashboard
+
+Web UI at port 3000 for managing the connector without curl/API calls:
+
+| Page | What it does |
+|------|-------------|
+| Assets | Create and view data assets |
+| Policies | Define access and contract policies |
+| Contract Definitions | Link policies to assets |
+| Catalog | Browse remote connectors' catalogs — trusted issuers appear as quick-select buttons |
+| Negotiations | Track contract negotiation state |
+| Transfers | Initiate and monitor data transfers, fetch data via EDR |
+| Trusted Issuers | Add/edit/remove trusted issuer DIDs with connector details (DSP endpoint, participant DID) |
 
 ### Identity & Trust
 
@@ -24,7 +39,7 @@ Each machine runs a fully self-contained stack:
 | DID identifiers | Done | Every connector has a `did:web` identity, resolvable over HTTP |
 | VC issuance | Done | Each machine signs its own MembershipCredential (EC P-256 / JWT) |
 | VC verification | Done | Incoming VCs verified via DID resolution + JWS 2020 signature suite |
-| Trust management | Done | Comma-separated trusted issuer list per connector (`TRUSTED_ISSUER_DIDS`) |
+| Trust management | Done | Dynamic trusted issuer registry — add/remove via dashboard or REST API, no restart needed |
 | Wallet (storage) | Done | IdentityHub stores VCs and presents them on DSP requests |
 
 ### Data Exchange
@@ -41,9 +56,49 @@ Each machine runs a fully self-contained stack:
 
 | Mode | Location | Description |
 |------|----------|-------------|
-| Single machine (dev) | `docker-compose.yml` (root) | 2 participants on one machine, Docker-internal networking |
-| Distributed (multi-machine, 2 participants per machine) | `deployment/distributed/` | Both participants on each machine, public IPs |
-| **Standalone connector (1 per machine)** | `deployment/connector/` | **NEW** — one self-contained connector per machine, independent keys |
+| **Cloud VM (standalone)** | `deployment/connector/` | One self-contained connector per VM, independent keys, cloud-oriented setup |
+| Local development | `docker-compose.yml` (root) | 2 participants on one machine, Docker-internal networking |
+
+---
+
+## Networking: How Do Companies Connect?
+
+Each company deploys their connector on a cloud VM (Azure, AWS, GCP) with a public IP. Connectors communicate directly over the internet using the DSP protocol with DCP identity verification.
+
+```
+   Company A              Company B              Company C
+ (cloud VM with          (cloud VM with          (cloud VM with
+  public IP)              public IP)              public IP)
+       ↕                      ↕                      ↕
+            direct HTTP between all connectors
+```
+
+### Required ports (open in cloud firewall/NSG)
+
+| Port | Service | Why |
+|------|---------|-----|
+| 7091 | IdentityHub Credentials API | VP/VC presentation requests |
+| 7093 | IdentityHub DID endpoint | Participant DID document resolution |
+| 9876 | DID Server (nginx) | Issuer DID document resolution |
+| 19194 | Control Plane DSP | Catalog, negotiation, transfer callbacks |
+| 38185 | Data Plane public | Data fetch via EDR token (pull transfers) |
+
+### Onboarding a new company
+
+1. Company deploys connector on a cloud VM with a public IP
+2. Company runs `generate-keys.sh` and `seed.sh` to set up identity
+3. Company shares three values: **issuer DID**, **DSP endpoint**, **participant DID**
+4. Existing participants add the new company via the **Trusted Issuers** page in the dashboard
+5. The new company adds existing participants the same way
+
+No config file changes, no restarts needed — trust is managed dynamically at runtime.
+
+### Machines behind NAT (laptops, on-prem)
+
+Bidirectional connectivity is required — even consumers need to be reachable for DID resolution and negotiation callbacks. Options:
+- **[Tailscale](https://tailscale.com/)** — private WireGuard mesh, free, no port forwarding
+- **Router port forwarding** — forward the required ports, use public IP
+- **Deploy to a cloud VM** — avoids NAT issues entirely (recommended)
 
 ---
 
@@ -66,7 +121,7 @@ Each machine runs a fully self-contained stack:
 | **Participant registry** | A shared list of all participants in the dataspace (DIDs, names, endpoints) |
 | **Federated catalog** | Browse available datasets across all participants without knowing each connector's URL |
 
-> Today: you must know a connector's DID and DSP endpoint URL to interact with it. There's no way to discover who's in the dataspace or what data they offer.
+> Today: you must know a connector's DID and DSP endpoint URL to interact with it. The trusted issuers list partially solves this (registered issuers appear as quick-select buttons on the catalog page), but there's no automatic way to discover who's in the dataspace.
 
 ### Identity & Profiles
 
@@ -75,7 +130,7 @@ Each machine runs a fully self-contained stack:
 | **Participant profiles** | Metadata beyond the DID — organization name, description, contact, data offerings |
 | **Wallet UI** | User-facing interface to view/manage stored credentials |
 
-> Today: participants are just DIDs with a MembershipCredential. No profile information is stored or displayed.
+> Today: participants are just DIDs with a MembershipCredential. Basic metadata (name, organization, email) is stored with trusted issuers, but there's no rich profile system.
 
 ### Governance
 
@@ -85,75 +140,7 @@ Each machine runs a fully self-contained stack:
 | **Per-participant access control** | Allow or deny specific participants (currently all-or-nothing via issuer trust) |
 | **Credential revocation** | Revoke a VC without restarting connectors |
 
-> Today: trust is managed by a static comma-separated list of issuer DIDs. Adding or removing a participant requires editing config and restarting control planes on every machine.
-
----
-
-## Networking: How Do Companies Connect?
-
-Different companies need to reach each other's connectors on specific ports (7093, 9876, 19194, 38185). Two realistic approaches:
-
-### Option A: Nebula (self-hosted mesh VPN)
-
-Pilots runs a lightweight **lighthouse** server on a cheap VPS. Each company installs the Nebula agent and receives a certificate from Pilots to join. Traffic flows directly between companies (peer-to-peer), not through the lighthouse.
-
-```
-              Pilots (governance)
-              runs lighthouse + CA
-             /        |         \
-            /         |          \
-     Company A    Company B    Company C
-     (cert A)     (cert B)     (cert C)
-         ↕            ↕            ↕
-      direct P2P traffic between all
-```
-
-**Onboarding a new company:**
-1. Company requests to join
-2. Pilots issues a Nebula certificate (= governance approval)
-3. Company installs Nebula agent + certificate
-4. Company can now reach all other participants — no change needed on existing machines
-
-**Pros:** Pilots controls who joins (issue cert = approve, revoke cert = deny). Open source, no vendor dependency. Certificate model mirrors the VC trust model. Adding participant N doesn't touch participants 1 through N-1.
-
-**Cons:** Each company needs to install software and open one UDP port.
-
-### Option B: Public endpoints (no VPN)
-
-Each company exposes the required ports directly on a public IP or behind a reverse proxy with TLS. No VPN needed — connectors talk over the public internet.
-
-```
-     Company A              Company B              Company C
-   (public IP or           (public IP or           (public IP or
-    reverse proxy)          reverse proxy)          reverse proxy)
-         ↕                      ↕                      ↕
-              direct HTTPS between all
-```
-
-**Onboarding a new company:**
-1. Company deploys connector with a public IP or sets up a reverse proxy
-2. Company shares their hostname with Pilots
-3. Pilots adds them to the trusted issuer list
-4. All existing participants update `TRUSTED_ISSUER_DIDS` and restart control plane
-
-**Pros:** No extra software — just Docker. Companies are used to exposing web services. Works with existing corporate infrastructure.
-
-**Cons:** Each company needs a public IP or domain + TLS certificates. Updating every participant's config when someone joins gets painful at scale.
-
-### Comparison
-
-| | Nebula (mesh VPN) | Public endpoints |
-|---|---|---|
-| **Barrier for companies** | Install Nebula agent | Expose ports / set up reverse proxy |
-| **IT department friction** | "Install this VPN" — might get pushback | "Open these ports" — more familiar |
-| **Governance control** | Strong — revoke cert = kick out | Weaker — remove from issuer list + restart everyone |
-| **Adding participant N** | Just issue a cert, zero change for others | Update config + restart control plane on every machine |
-| **Security** | Encrypted tunnel, not exposed to internet | Exposed ports, relies on TLS + DCP auth |
-| **Scales to 10+** | Well | `TRUSTED_ISSUER_DIDS` restart problem needs solving |
-
-> **Key question for discussion:** Which friction is more acceptable to target companies — installing a VPN agent, or exposing ports to the internet?
->
-> **Scaling note:** With either option, the current `TRUSTED_ISSUER_DIDS` mechanism (static list, requires restart) becomes painful beyond ~5 participants. A shared participant registry that connectors poll would solve this but is a bigger piece of work.
+> Today: trust is managed per-connector via the trusted issuer registry. Adding/removing issuers is dynamic (no restart), but each connector manages its own trust list independently — there's no central governance authority.
 
 ---
 
@@ -167,16 +154,21 @@ Each company exposes the required ports directly on a public IP or behind a reve
   │  Identity Hub (wallet backend)       │              │  │    - Participant self-service        │
   │  DID & VC (issue, store, verify)     │              │  │    - Governance approval             │
   │  Trust anchor (issuer DID server)    │              │  │    - Automated VC issuance           │
-  │  Full data exchange                  │              │  │                                      │
-  │    - Catalog, negotiate, transfer    │              │  │  Discovery                           │
-  │    - Pull & push                     │              │  │    - Participant registry            │
-  │    - Bidirectional                   │              │  │    - Federated catalog               │
-  │  3 deployment modes                  │              │  │                                      │
-  │                                      │              │  │  Profiles & governance UI            │
-  │  ✓ Infrastructure layer complete     │              │  │    - Participant profiles            │
-  └──────────────────────────────────────┘              │  │    - Member management               │
-                                                        │  │    - Credential revocation           │
-                                                        │  └──────────────────────────────────────┘
+  │  Dynamic trust management            │              │  │                                      │
+  │    - REST API + dashboard UI         │              │  │  Discovery                           │
+  │    - No restart on trust changes     │              │  │    - Participant registry            │
+  │  Full data exchange                  │              │  │    - Federated catalog               │
+  │    - Catalog, negotiate, transfer    │              │  │                                      │
+  │    - Pull & push                     │              │  │  Profiles & governance UI            │
+  │    - Bidirectional                   │              │  │    - Participant profiles            │
+  │  Dashboard (web UI)                  │              │  │    - Member management               │
+  │    - Asset/policy/contract mgmt      │              │  │    - Credential revocation           │
+  │    - Catalog quick-select            │              │  └──────────────────────────────────────┘
+  │    - Trusted issuer management       │              │
+  │  Cloud-ready deployment              │              │
+  │                                      │              │
+  │  ✓ Infrastructure layer complete     │              │
+  └──────────────────────────────────────┘              │
 ```
 
-**Bottom line:** The infrastructure plumbing works end-to-end — connectors can discover, negotiate, and exchange data across machines with full DCP identity. What's next is the user-facing and governance layer on top.
+**Bottom line:** The infrastructure plumbing works end-to-end — connectors can discover, negotiate, and exchange data across cloud VMs with full DCP identity. Trust management is dynamic via the dashboard. What's next is the user-facing and governance layer on top.
