@@ -112,6 +112,7 @@ services:
       - "19194:19194"
     volumes:
       - ../../config/docker/controlplane-connector.properties:/app/config/controlplane-connector.properties:ro
+      - controlplane-data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -182,3 +183,4 @@ services:
 volumes:
   postgres-data:
   did-server-content:
+  controlplane-data:

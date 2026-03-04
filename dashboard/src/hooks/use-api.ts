@@ -268,6 +268,19 @@ export interface AddTrustedIssuerParams {
   participantDid?: string;
 }
 
+export function useTrustedIssuerHealth() {
+  const { apiKey } = useApiKey();
+  return useQuery({
+    queryKey: ["trusted-issuer-health"],
+    queryFn: () =>
+      plainFetch<Record<string, string>>(
+        "/v1/trusted-issuers/health",
+        { apiKey }
+      ),
+    refetchInterval: 15000,
+  });
+}
+
 export function useTrustedIssuers() {
   const { apiKey } = useApiKey();
   return useQuery({

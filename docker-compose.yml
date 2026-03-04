@@ -152,6 +152,7 @@ services:
       - "19194:19194"
     volumes:
       - ./config/docker/controlplane-participant-1.properties:/app/config/controlplane-participant-1.properties:ro
+      - p1-controlplane-data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -183,6 +184,7 @@ services:
       - "29194:29194"
     volumes:
       - ./config/docker/controlplane-participant-2.properties:/app/config/controlplane-participant-2.properties:ro
+      - p2-controlplane-data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -318,3 +320,5 @@ services:
 
 volumes:
   postgres-data:
+  p1-controlplane-data:
+  p2-controlplane-data:

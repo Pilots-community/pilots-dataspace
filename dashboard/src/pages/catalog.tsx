@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useCatalog, useCreateNegotiation, useTrustedIssuers } from "@/hooks/use-api";
+import { useCatalog, useCreateNegotiation, useTrustedIssuers, useTrustedIssuerHealth } from "@/hooks/use-api";
 import { useToastContext } from "@/hooks/use-toast-context";
 import { CatalogViewer } from "@/components/catalog-viewer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Check, X, AlertTriangle } from "lucide-react";
 
 export default function CatalogPage() {
   const toast = useToastContext();
@@ -18,6 +19,7 @@ export default function CatalogPage() {
   const catalog = useCatalog();
   const negotiate = useCreateNegotiation();
   const { data: trustedIssuers } = useTrustedIssuers();
+  const { data: issuerHealth } = useTrustedIssuerHealth();
 
   const connectorIssuers = trustedIssuers?.filter(
     (i) => i.dspEndpoint && i.participantDid
@@ -87,6 +89,13 @@ export default function CatalogPage() {
                 setCounterPartyId(issuer.participantDid);
               }}
             >
+              {issuerHealth?.[issuer.did] === "mutual_trust" ? (
+                <Check className="mr-1.5 h-3.5 w-3.5 text-green-500" />
+              ) : issuerHealth?.[issuer.did] === "untrusted" ? (
+                <AlertTriangle className="mr-1.5 h-3.5 w-3.5 text-yellow-500" />
+              ) : issuerHealth?.[issuer.did] === "unreachable" ? (
+                <X className="mr-1.5 h-3.5 w-3.5 text-red-500" />
+              ) : null}
               {issuer.organization || issuer.name || issuer.did}
             </Button>
           ))}
