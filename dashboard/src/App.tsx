@@ -9,6 +9,7 @@ import ContractDefsPage from "@/pages/contract-defs";
 import CatalogPage from "@/pages/catalog";
 import NegotiationsPage from "@/pages/negotiations";
 import TransfersPage from "@/pages/transfers";
+import TrustedIssuersPage from "@/pages/trusted-issuers";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,6 +31,7 @@ export function App() {
               <Route path="/catalog" element={<CatalogPage />} />
               <Route path="/negotiations" element={<NegotiationsPage />} />
               <Route path="/transfers" element={<TransfersPage />} />
+              <Route path="/trusted-issuers" element={<TrustedIssuersPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

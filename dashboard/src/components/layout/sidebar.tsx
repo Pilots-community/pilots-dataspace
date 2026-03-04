@@ -7,6 +7,7 @@ import {
   Search,
   Handshake,
   ArrowRightLeft,
+  BadgeCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,7 @@ const links = [
   { to: "/catalog", label: "Catalog", icon: Search },
   { to: "/negotiations", label: "Negotiations", icon: Handshake },
   { to: "/transfers", label: "Transfers", icon: ArrowRightLeft },
+  { to: "/trusted-issuers", label: "Trusted Issuers", icon: BadgeCheck },
 ];
 
 export function Sidebar() {

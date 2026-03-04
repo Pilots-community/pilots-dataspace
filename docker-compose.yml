@@ -144,7 +144,6 @@ services:
       exec java -Djava.security.egd=file:/dev/urandom
       -Dedc.fs.config=/app/config/controlplane-participant-1.properties
       -Dedc.vault.hashicorp.url=http://participant-1-vault:8200
-      -Dedc.demo.dcp.trusted.issuer.dids=did:web:participant-1-did-server%3A9876,did:web:participant-2-did-server%3A9876
       -jar edc-controlplane.jar"
     ports:
       - "18181:18181"
@@ -176,7 +175,6 @@ services:
       exec java -Djava.security.egd=file:/dev/urandom
       -Dedc.fs.config=/app/config/controlplane-participant-2.properties
       -Dedc.vault.hashicorp.url=http://participant-2-vault:8200
-      -Dedc.demo.dcp.trusted.issuer.dids=did:web:participant-1-did-server%3A9876,did:web:participant-2-did-server%3A9876
       -jar edc-controlplane.jar"
     ports:
       - "28181:28181"

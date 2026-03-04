@@ -219,6 +219,52 @@ echo "Storing STS client secret in participant-2 connector..."
 store_or_update_secret "${P2_MGMT}" "${P2_DID}-sts-client-secret" "${P2_CLIENT_SECRET}"
 
 echo ""
+echo "=== Registering Trusted Issuers ==="
+
+# Register trusted issuer DIDs via the management API. Both participants need to
+# trust both DID servers so cross-participant credential verification works.
+TRUSTED_ISSUER_DIDS="did:web:participant-1-did-server%3A9876 did:web:participant-2-did-server%3A9876"
+
+register_trusted_issuer() {
+  local MGMT_URL="$1"
+  local ISSUER_DID="$2"
+  local ISSUER_NAME="$3"
+  local ISSUER_ORG="$4"
+  local DSP_ENDPOINT="${5:-}"
+  local PARTICIPANT_DID="${6:-}"
+
+  local BODY="{\"did\": \"${ISSUER_DID}\", \"name\": \"${ISSUER_NAME}\", \"organization\": \"${ISSUER_ORG}\""
+  if [ -n "$DSP_ENDPOINT" ]; then
+    BODY="${BODY}, \"dspEndpoint\": \"${DSP_ENDPOINT}\""
+  fi
+  if [ -n "$PARTICIPANT_DID" ]; then
+    BODY="${BODY}, \"participantDid\": \"${PARTICIPANT_DID}\""
+  fi
+  BODY="${BODY}}"
+
+  local HTTP_CODE
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${MGMT_URL}/v1/trusted-issuers" \
+    -H "Content-Type: application/json" \
+    -H "x-api-key: password" \
+    -d "${BODY}")
+
+  if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+    echo " OK"
+  else
+    echo " HTTP ${HTTP_CODE}"
+  fi
+}
+
+echo -n "Registering did:web:participant-1-did-server%3A9876 in participant-1..."
+register_trusted_issuer "${P1_MGMT}" "did:web:participant-1-did-server%3A9876" "Participant 1 DID Server" "Participant 1" "${P1_DSP}" "${P1_DID}"
+echo -n "Registering did:web:participant-1-did-server%3A9876 in participant-2..."
+register_trusted_issuer "${P2_MGMT}" "did:web:participant-1-did-server%3A9876" "Participant 1 DID Server" "Participant 1" "${P1_DSP}" "${P1_DID}"
+echo -n "Registering did:web:participant-2-did-server%3A9876 in participant-1..."
+register_trusted_issuer "${P1_MGMT}" "did:web:participant-2-did-server%3A9876" "Participant 2 DID Server" "Participant 2" "${P2_DSP}" "${P2_DID}"
+echo -n "Registering did:web:participant-2-did-server%3A9876 in participant-2..."
+register_trusted_issuer "${P2_MGMT}" "did:web:participant-2-did-server%3A9876" "Participant 2 DID Server" "Participant 2" "${P2_DSP}" "${P2_DID}"
+
+echo ""
 echo "=== Storing Membership Credentials ==="
 
 # Store the pre-signed MembershipCredential VC in each participant's IdentityHub

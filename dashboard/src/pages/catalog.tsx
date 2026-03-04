@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useCatalog, useCreateNegotiation } from "@/hooks/use-api";
+import { useCatalog, useCreateNegotiation, useTrustedIssuers } from "@/hooks/use-api";
 import { useToastContext } from "@/hooks/use-toast-context";
 import { CatalogViewer } from "@/components/catalog-viewer";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,11 @@ export default function CatalogPage() {
 
   const catalog = useCatalog();
   const negotiate = useCreateNegotiation();
+  const { data: trustedIssuers } = useTrustedIssuers();
+
+  const connectorIssuers = trustedIssuers?.filter(
+    (i) => i.dspEndpoint && i.participantDid
+  );
 
   function handleRequest(e: React.FormEvent) {
     e.preventDefault();
@@ -65,6 +70,29 @@ export default function CatalogPage() {
   return (
     <div>
       <h1 className="mb-6 text-2xl font-bold">Catalog Browser</h1>
+      {connectorIssuers && connectorIssuers.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {connectorIssuers.map((issuer) => (
+            <Button
+              key={issuer.did}
+              variant={
+                counterPartyAddress === issuer.dspEndpoint &&
+                counterPartyId === issuer.participantDid
+                  ? "default"
+                  : "outline"
+              }
+              size="sm"
+              onClick={() => {
+                setCounterPartyAddress(issuer.dspEndpoint);
+                setCounterPartyId(issuer.participantDid);
+              }}
+            >
+              {issuer.organization || issuer.name || issuer.did}
+            </Button>
+          ))}
+        </div>
+      )}
+
       <Card className="mb-6">
         <CardHeader>
           <CardTitle className="text-base">Request Catalog</CardTitle>

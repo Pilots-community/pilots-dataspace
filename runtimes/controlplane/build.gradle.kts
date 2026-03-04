@@ -45,6 +45,7 @@ plugins {
 dependencies {
     runtimeOnly(project(":extensions:example-extension"))
     runtimeOnly(project(":extensions:dcp-patch"))
+    runtimeOnly(project(":extensions:trusted-issuer-api"))
     runtimeOnly(project(":extensions:did-example-resolver"))
     runtimeOnly(libs.edc.bom.controlplane)
     runtimeOnly("org.eclipse.edc:secrets-api:${libs.versions.edc.get()}")
