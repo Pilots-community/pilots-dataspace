@@ -223,7 +223,6 @@ echo "=== Registering Trusted Issuers ==="
 
 # Register trusted issuer DIDs via the management API. Both participants need to
 # trust both DID servers so cross-participant credential verification works.
-TRUSTED_ISSUER_DIDS="did:web:participant-1-did-server%3A9876 did:web:participant-2-did-server%3A9876"
 
 register_trusted_issuer() {
   local MGMT_URL="$1"
