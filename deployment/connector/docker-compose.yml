@@ -60,7 +60,7 @@ services:
       retries: 10
 
   identityhub:
-    image: identityhub:latest
+    image: ${IMAGE_REGISTRY:-}identityhub:latest
     container_name: identityhub
     command: >
       sh -c "exec java -Djava.security.egd=file:/dev/urandom
@@ -90,7 +90,7 @@ services:
       retries: 10
 
   controlplane:
-    image: controlplane:latest
+    image: ${IMAGE_REGISTRY:-}controlplane:latest
     container_name: controlplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
@@ -129,7 +129,7 @@ services:
       retries: 10
 
   dataplane:
-    image: dataplane:latest
+    image: ${IMAGE_REGISTRY:-}dataplane:latest
     container_name: dataplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
@@ -158,6 +158,7 @@ services:
       retries: 10
 
   dashboard:
+    image: ${IMAGE_REGISTRY:-}dashboard:latest
     build: ../../dashboard
     container_name: dashboard
     ports:

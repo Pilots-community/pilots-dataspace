@@ -1,0 +1,124 @@
+name: Publish to GHCR
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/pilots-dataspace
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq python3-cryptography
+
+      - name: Generate keys and credentials
+        run: ./generate-keys.sh
+
+      - name: Build fat JARs
+        run: ./gradlew shadowJar
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine image tags
+        id: tags
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            echo "tag=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # --- ControlPlane ---
+      - name: Build & push controlplane
+        uses: docker/build-push-action@v6
+        with:
+          context: runtimes/controlplane
+          file: runtimes/controlplane/src/main/docker/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/controlplane:${{ steps.tags.outputs.tag }}
+            ${{ steps.tags.outputs.latest == 'true' && format('{0}/controlplane:latest', env.IMAGE_PREFIX) || '' }}
+          build-args: |
+            JAR=build/libs/controlplane.jar
+          platforms: linux/amd64
+
+      # --- DataPlane ---
+      - name: Build & push dataplane
+        uses: docker/build-push-action@v6
+        with:
+          context: runtimes/dataplane
+          file: runtimes/dataplane/src/main/docker/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/dataplane:${{ steps.tags.outputs.tag }}
+            ${{ steps.tags.outputs.latest == 'true' && format('{0}/dataplane:latest', env.IMAGE_PREFIX) || '' }}
+          build-args: |
+            JAR=build/libs/dataplane.jar
+          platforms: linux/amd64
+
+      # --- IdentityHub ---
+      - name: Build & push identityhub
+        uses: docker/build-push-action@v6
+        with:
+          context: runtimes/identityhub
+          file: runtimes/identityhub/src/main/docker/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/identityhub:${{ steps.tags.outputs.tag }}
+            ${{ steps.tags.outputs.latest == 'true' && format('{0}/identityhub:latest', env.IMAGE_PREFIX) || '' }}
+          build-args: |
+            JAR=build/libs/identityhub.jar
+          platforms: linux/amd64
+
+      # --- Dashboard ---
+      - name: Build & push dashboard
+        uses: docker/build-push-action@v6
+        with:
+          context: dashboard
+          file: dashboard/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/dashboard:${{ steps.tags.outputs.tag }}
+            ${{ steps.tags.outputs.latest == 'true' && format('{0}/dashboard:latest', env.IMAGE_PREFIX) || '' }}
+          platforms: linux/amd64

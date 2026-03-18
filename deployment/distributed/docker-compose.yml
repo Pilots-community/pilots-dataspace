@@ -60,7 +60,7 @@ services:
       retries: 10
 
   participant-1-identityhub:
-    image: identityhub:latest
+    image: ${IMAGE_REGISTRY:-}identityhub:latest
     container_name: participant-1-identityhub
     command: >
       sh -c "exec java -Djava.security.egd=file:/dev/urandom
@@ -90,7 +90,7 @@ services:
       retries: 10
 
   participant-2-identityhub:
-    image: identityhub:latest
+    image: ${IMAGE_REGISTRY:-}identityhub:latest
     container_name: participant-2-identityhub
     command: >
       sh -c "exec java -Djava.security.egd=file:/dev/urandom
@@ -120,7 +120,7 @@ services:
       retries: 10
 
   participant-1-controlplane:
-    image: controlplane:latest
+    image: ${IMAGE_REGISTRY:-}controlplane:latest
     container_name: participant-1-controlplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
@@ -159,7 +159,7 @@ services:
       retries: 10
 
   participant-2-controlplane:
-    image: controlplane:latest
+    image: ${IMAGE_REGISTRY:-}controlplane:latest
     container_name: participant-2-controlplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
@@ -199,7 +199,7 @@ services:
       retries: 10
 
   participant-1-dataplane:
-    image: dataplane:latest
+    image: ${IMAGE_REGISTRY:-}dataplane:latest
     container_name: participant-1-dataplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
@@ -228,7 +228,7 @@ services:
       retries: 10
 
   participant-2-dataplane:
-    image: dataplane:latest
+    image: ${IMAGE_REGISTRY:-}dataplane:latest
     container_name: participant-2-dataplane
     command: >
       sh -c "unset WEB_HTTP_PORT WEB_HTTP_PATH &&
