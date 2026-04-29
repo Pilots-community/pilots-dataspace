@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pilots Dataspace - Management UI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+        }
+
+        .header p {
+            margin-top: 0.5rem;
+            opacity: 0.9;
+            font-size: 0.9rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .connector-tabs {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            border-color: #667eea;
+        }
+
+        .tab.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .section h2 {
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+            color: #2d3748;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #48bb78;
+        }
+
+        .btn-secondary:hover {
+            background: #38a169;
+        }
+
+        .btn-danger {
+            background: #f56565;
+        }
+
+        .btn-danger:hover {
+            background: #e53e3e;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 0.5rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        .data-table th {
+            background: #f7fafc;
+            padding: 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            color: #4a5568;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .data-table td {
+            padding: 0.75rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .data-table tr:hover {
+            background: #f7fafc;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .badge-info {
+            background: #bee3f8;
+            color: #2c5282;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #718096;
+        }
+
+        .empty-state svg {
+            width: 4rem;
+            height: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .json-viewer {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            max-height: 400px;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #4a5568;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 0.95rem;
+        }
+
+        .form-group textarea {
+            font-family: 'Courier New', monospace;
+            min-height: 150px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-header h3 {
+            font-size: 1.5rem;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #718096;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .stat-card h3 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-card p {
+            opacity: 0.9;
+            font-size: 0.9rem;
+        }
+
+        .notification {
+            position: fixed;
+            top: 2rem;
+            right: 2rem;
+            background: white;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: none;
+            z-index: 2000;
+            max-width: 400px;
+        }
+
+        .notification.show {
+            display: block;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+            }
+            to {
+                transform: translateX(0);
+            }
+        }
+
+        .notification.success {
+            border-left: 4px solid #48bb78;
+        }
+
+        .notification.error {
+            border-left: 4px solid #f56565;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 Pilots Dataspace Management</h1>
+        <p>Manage your EDC Provider and Consumer connectors</p>
+    </div>
+
+    <div class="container">
+        <div class="connector-tabs">
+            <div class="tab active" onclick="switchConnector('provider')">Provider Connector</div>
+            <div class="tab" onclick="switchConnector('consumer')">Consumer Connector</div>
+        </div>
+
+        <div class="stats-grid" id="stats">
+            <!-- Stats will be loaded here -->
+        </div>
+
+        <div class="section">
+            <h2>📦 Assets</h2>
+            <div class="action-buttons">
+                <button class="btn" onclick="loadAssets()">
+                    <span id="assets-btn-text">Refresh Assets</span>
+                </button>
+                <button class="btn btn-secondary" onclick="showCreateAssetModal()">+ Create Asset</button>
+            </div>
+            <div id="assets-container">
+                <div class="empty-state">Click "Refresh Assets" to load assets</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>📋 Policy Definitions</h2>
+            <div class="action-buttons">
+                <button class="btn" onclick="loadPolicies()">
+                    <span id="policies-btn-text">Refresh Policies</span>
+                </button>
+                <button class="btn btn-secondary" onclick="showCreatePolicyModal()">+ Create Policy</button>
+            </div>
+            <div id="policies-container">
+                <div class="empty-state">Click "Refresh Policies" to load policies</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>📝 Contract Definitions</h2>
+            <div class="action-buttons">
+                <button class="btn" onclick="loadContractDefinitions()">
+                    <span id="contracts-btn-text">Refresh Contracts</span>
+                </button>
+                <button class="btn btn-secondary" onclick="showCreateContractModal()">+ Create Contract</button>
+            </div>
+            <div id="contracts-container">
+                <div class="empty-state">Click "Refresh Contracts" to load contract definitions</div>
+            </div>
+        </div>
+
+        <div class="section" id="consumer-catalog" style="display: none;">
+            <h2>🔍 Provider Catalog</h2>
+            <div class="action-buttons">
+                <button class="btn" onclick="requestCatalog()">
+                    <span id="catalog-btn-text">Request Catalog from Provider</span>
+                </button>
+            </div>
+            <div id="catalog-container">
+                <div class="empty-state">Request the provider's catalog to see available offerings</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Asset Modal -->
+    <div class="modal" id="create-asset-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create New Asset</h3>
+                <button class="close-btn" onclick="closeModal('create-asset-modal')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label>Asset ID</label>
+                <input type="text" id="asset-id" placeholder="my-asset-1">
+            </div>
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="asset-name" placeholder="My Dataset">
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <input type="text" id="asset-description" placeholder="Description of the dataset">
+            </div>
+            <div class="form-group">
+                <label>Base URL</label>
+                <input type="text" id="asset-url" placeholder="https://example.com/data">
+            </div>
+            <div class="action-buttons">
+                <button class="btn" onclick="createAsset()">Create Asset</button>
+                <button class="btn btn-danger" onclick="closeModal('create-asset-modal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Policy Modal -->
+    <div class="modal" id="create-policy-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create Policy Definition</h3>
+                <button class="close-btn" onclick="closeModal('create-policy-modal')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label>Policy ID</label>
+                <input type="text" id="policy-id" placeholder="allow-all-policy">
+            </div>
+            <div class="form-group">
+                <label>Policy JSON</label>
+                <textarea id="policy-json" placeholder='{"@type": "PolicyDefinition", "policy": {...}}'></textarea>
+            </div>
+            <div class="action-buttons">
+                <button class="btn" onclick="createPolicy()">Create Policy</button>
+                <button class="btn btn-danger" onclick="closeModal('create-policy-modal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Contract Modal -->
+    <div class="modal" id="create-contract-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create Contract Definition</h3>
+                <button class="close-btn" onclick="closeModal('create-contract-modal')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label>Contract ID</label>
+                <input type="text" id="contract-id" placeholder="contract-1">
+            </div>
+            <div class="form-group">
+                <label>Asset ID</label>
+                <input type="text" id="contract-asset-id" placeholder="my-asset-1">
+            </div>
+            <div class="form-group">
+                <label>Policy ID</label>
+                <input type="text" id="contract-policy-id" placeholder="allow-all-policy">
+            </div>
+            <div class="action-buttons">
+                <button class="btn" onclick="createContract()">Create Contract</button>
+                <button class="btn btn-danger" onclick="closeModal('create-contract-modal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div class="notification" id="notification"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

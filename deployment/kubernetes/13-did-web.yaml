@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: did-json
+  namespace: pilots-dataspace
+data:
+  did.json: |
+    {
+      "@context": [
+        "https://www.w3.org/ns/did/v1"
+      ],
+      "id": "did:web:pilots-dataspace.westeurope.cloudapp.azure.com",
+      "verificationMethod": [
+        {
+          "id": "did:web:pilots-dataspace.westeurope.cloudapp.azure.com#key-1",
+          "type": "JsonWebKey2020",
+          "controller": "did:web:pilots-dataspace.westeurope.cloudapp.azure.com",
+          "publicKeyMultibase": null,
+          "publicKeyJwk": {
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": "BXku2QEqmPN6mj9jPgktmJ3fBbbRWL4G8uPXAmbuRRk"
+          }
+        }
+      ],
+      "authentication": [],
+      "service": []
+    }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: did-web-ingress
+  namespace: pilots-dataspace
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - pilots-dataspace.westeurope.cloudapp.azure.com
+    secretName: pilots-dataspace-tls
+  rules:
+  - host: pilots-dataspace.westeurope.cloudapp.azure.com
+    http:
+      paths:
+      - path: /.well-known/did.json
+        pathType: Prefix
+        backend:
+          service:
+            name: did-server
+            port:
+              number: 9876

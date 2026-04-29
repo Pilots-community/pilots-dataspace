@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: controlplane-provider-config
+  namespace: pilots-dataspace
+data:
+  controlplane-provider.properties: |
+    # identity
+    edc.participant.id=did:web:pilots-dataspace.westeurope.cloudapp.azure.com
+    edc.hostname=provider-controlplane
+    
+    # Base listener (explicit to avoid port conflicts)
+    web.http.port=18181
+    web.http.path=/api
+    
+    # Management API
+    web.http.management.port=19193
+    web.http.management.path=/management
+    
+    # Dataspace Protocol API
+    web.http.protocol.port=19194
+    web.http.protocol.path=/protocol
+    edc.dsp.callback.address=http://provider-controlplane:19194/protocol
+    
+    # Control API (internal)
+    web.http.control.port=19192
+    web.http.control.path=/control
+    
+    # DCP / Identity
+    edc.iam.issuer.id=did:web:pilots-dataspace.westeurope.cloudapp.azure.com
+    edc.iam.did.web.use.https=true
+    edc.iam.sts.privatekey.alias=did:web:pilots-dataspace.westeurope.cloudapp.azure.com-alias
+    edc.iam.sts.publickey.id=did:web:pilots-dataspace.westeurope.cloudapp.azure.com#key-1
+    edc.iam.sts.oauth.client.id=did:web:pilots-dataspace.westeurope.cloudapp.azure.com
+    edc.iam.sts.oauth.client.secret.alias=did:web:pilots-dataspace.westeurope.cloudapp.azure.com-sts-client-secret
+    edc.iam.sts.oauth.token.url=http://provider-identityhub:7096/api/sts/token
+    
+    # PostgreSQL persistence
+    edc.sql.schema.autocreate=true
+    edc.datasource.default.url=jdbc:postgresql://postgres:5432/provider_controlplane
+    edc.datasource.default.user=edc
+    
+    # HashiCorp Vault
+    edc.vault.hashicorp.url=http://vault:8200
+    edc.vault.hashicorp.api.secret.path=/v1/secret
+    edc.vault.hashicorp.api.health.check.path=/v1/sys/health
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provider-controlplane
+  namespace: pilots-dataspace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: provider-controlplane
+  template:
+    metadata:
+      labels:
+        app: provider-controlplane
+    spec:
+      initContainers:
+      - name: wait-for-postgres
+        image: busybox:latest
+        command: ['sh', '-c', 'until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done;']
+      - name: wait-for-vault
+        image: busybox:latest
+        command: ['sh', '-c', 'until nc -z vault 8200; do echo waiting for vault; sleep 2; done;']
+      - name: wait-for-identityhub
+        image: busybox:latest
+        command: ['sh', '-c', 'until nc -z provider-identityhub 7090; do echo waiting for provider-identityhub; sleep 2; done;']
+      - name: wait-for-did-server
+        image: busybox:latest
+        command: ['sh', '-c', 'until nc -z did-server 9876; do echo waiting for did-server; sleep 2; done;']
+      containers:
+      - name: controlplane
+        image: pilotsdataspaceregistry.azurecr.io/controlplane:latest
+        command:
+        - sh
+        - -c
+        - unset WEB_HTTP_PORT WEB_HTTP_PATH && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/controlplane-provider.properties -Dedc.demo.dcp.issuer.did=did:web:pilots-dataspace.westeurope.cloudapp.azure.com -jar edc-controlplane.jar
+        ports:
+        - containerPort: 18181
+          name: default
+        - containerPort: 19192
+          name: control
+        - containerPort: 19193
+          name: management
+        - containerPort: 19194
+          name: protocol
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+        env:
+        - name: EDC_API_AUTH_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pilots-dataspace-secrets
+              key: api-auth-key
+        - name: EDC_DATASOURCE_DEFAULT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: pilots-dataspace-secrets
+              key: postgres-password
+        - name: EDC_VAULT_HASHICORP_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: pilots-dataspace-secrets
+              key: vault-token
+        livenessProbe:
+          httpGet:
+            path: /api/check/health
+            port: 18181
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/check/health
+            port: 18181
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: controlplane-provider-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: provider-controlplane
+  namespace: pilots-dataspace
+spec:
+  selector:
+    app: provider-controlplane
+  ports:
+  - port: 18181
+    targetPort: 18181
+    name: default
+  - port: 19192
+    targetPort: 19192
+    name: control
+  - port: 19193
+    targetPort: 19193
+    name: management
+  - port: 19194
+    targetPort: 19194
+    name: protocol
+  type: ClusterIP

@@ -1,0 +1,154 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: identityhub-provider-config
+  namespace: pilots-dataspace
+data:
+  identityhub-provider.properties: |
+    # Base listener
+    web.http.port=7090
+    web.http.path=/api
+    
+    # Credentials API
+    web.http.credentials.port=7091
+    web.http.credentials.path=/api/credentials
+    
+    # Identity API (participant management)
+    web.http.identity.port=7092
+    web.http.identity.path=/api/identity
+    
+    # DID API (did:web resolution endpoint)
+    web.http.did.port=7093
+    web.http.did.path=/
+    
+    # Version API
+    web.http.version.port=7095
+    web.http.version.path=/api/version
+    
+    # STS API (embedded)
+    web.http.sts.port=7096
+    web.http.sts.path=/api/sts
+    
+    # DID Web
+    edc.iam.did.web.use.https=true
+    edc.hostname=provider-identityhub
+    
+    # STS key aliases (seeded by did-example-resolver)
+    edc.iam.sts.privatekey.alias=did:web:pilots-dataspace.westeurope.cloudapp.azure.com-alias
+    edc.iam.sts.publickey.id=did:web:pilots-dataspace.westeurope.cloudapp.azure.com#key-1
+    
+    # Super-user seed config
+    # PostgreSQL persistence
+    edc.sql.schema.autocreate=true
+    edc.datasource.default.url=jdbc:postgresql://postgres:5432/provider_identityhub
+    edc.datasource.default.user=edc
+    
+    # HashiCorp Vault
+    edc.vault.hashicorp.url=http://vault:8200
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provider-identityhub
+  namespace: pilots-dataspace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: provider-identityhub
+  template:
+    metadata:
+      labels:
+        app: provider-identityhub
+    spec:
+      initContainers:
+      - name: wait-for-postgres
+        image: busybox:latest
+        command: ['sh', '-c', 'until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done;']
+      - name: wait-for-vault
+        image: busybox:latest
+        command: ['sh', '-c', 'until nc -z vault 8200; do echo waiting for vault; sleep 2; done;']
+      containers:
+      - name: identityhub
+        image: pilotsdataspaceregistry.azurecr.io/identityhub:latest
+        command:
+        - sh
+        - -c
+        - exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/identityhub-provider.properties -jar identityhub.jar
+        ports:
+        - containerPort: 7090
+          name: base
+        - containerPort: 7091
+          name: credentials
+        - containerPort: 7092
+          name: identity
+        - containerPort: 7093
+          name: did
+        - containerPort: 7095
+          name: version
+        - containerPort: 7096
+          name: sts
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+        env:
+        - name: EDC_IH_API_SUPERUSER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: pilots-dataspace-secrets
+              key: superuser-token
+        - name: EDC_DATASOURCE_DEFAULT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: pilots-dataspace-secrets
+              key: postgres-password
+        - name: EDC_VAULT_HASHICORP_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: pilots-dataspace-secrets
+              key: vault-token
+        livenessProbe:
+          httpGet:
+            path: /api/check/health
+            port: 7090
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/check/health
+            port: 7090
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: identityhub-provider-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: provider-identityhub
+  namespace: pilots-dataspace
+spec:
+  selector:
+    app: provider-identityhub
+  ports:
+  - port: 7090
+    targetPort: 7090
+    name: base
+  - port: 7091
+    targetPort: 7091
+    name: credentials
+  - port: 7092
+    targetPort: 7092
+    name: identity
+  - port: 7093
+    targetPort: 7093
+    name: did
+  - port: 7095
+    targetPort: 7095
+    name: version
+  - port: 7096
+    targetPort: 7096
+    name: sts
+  type: ClusterIP

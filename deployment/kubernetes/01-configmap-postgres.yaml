@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-sql
+  namespace: pilots-dataspace
+data:
+  init.sql: |
+    -- Create databases for all components
+    CREATE DATABASE provider_controlplane;
+    CREATE DATABASE provider_identityhub;
+    CREATE DATABASE provider_dataplane;
+    
+    -- Grant permissions
+    GRANT ALL PRIVILEGES ON DATABASE provider_controlplane TO edc;
+    GRANT ALL PRIVILEGES ON DATABASE provider_identityhub TO edc;
+    GRANT ALL PRIVILEGES ON DATABASE provider_dataplane TO edc;
