@@ -15,4 +15,4 @@ Write-Host ""
 Write-Host "Note: The frontend is now at the root path (/)" -ForegroundColor Yellow
 Write-Host "Your API endpoints are still available at:" -ForegroundColor Yellow
 Write-Host "  - /provider/management/*" -ForegroundColor Gray
-Write-Host "  - /consumer/management/*" -ForegroundColor Gray
+

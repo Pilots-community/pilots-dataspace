@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: pilots-dataspace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboard
+  template:
+    metadata:
+      labels:
+        app: dashboard
+    spec:
+      containers:
+      - name: dashboard
+        image: pilotsdataspaceregistry.azurecr.io/edc-dashboard:testing
+        ports:
+        - containerPort: 80
+        env:
+        - name: CP_HOST
+          value: provider-controlplane
+        - name: CP_MGMT_PORT
+          value: "19193"
+        - name: CP_HEALTH_PORT
+          value: "18181"
+        - name: DP_HOST
+          value: provider-dataplane
+        - name: DP_HEALTH_PORT
+          value: "38181"
+        - name: DP_PUBLIC_PORT
+          value: "38185"
+        - name: IH_HOST
+          value: provider-identityhub
+        - name: IH_HEALTH_PORT
+          value: "7090"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: pilots-dataspace
+spec:
+  selector:
+    app: dashboard
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dashboard-ingress
+  namespace: pilots-dataspace
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: "/$2"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - pilots-dataspace.westeurope.cloudapp.azure.com
+    secretName: pilots-dataspace-tls
+  rules:
+  - host: pilots-dataspace.westeurope.cloudapp.azure.com
+    http:
+      paths:
+      - path: /dashboard(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: dashboard
+            port:
+              number: 80

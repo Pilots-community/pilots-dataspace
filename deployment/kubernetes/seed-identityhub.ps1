@@ -4,9 +4,8 @@ param(
     [string]$SuperuserKey = $env:PILOTS_SUPERUSER_KEY,
     [string]$ApiKey = $env:PILOTS_API_AUTH_KEY,
     [string]$ProviderIdentityUrl = "http://localhost:7092/api/identity",
-    [string]$ConsumerIdentityUrl = "http://localhost:7082/api/identity",
     [string]$ProviderMgmtUrl = "http://localhost:19193/management",
-    [string]$ConsumerMgmtUrl = "http://localhost:29193/management"
+    [string]$ProviderDid = "did:web:pilots-dataspace.westeurope.cloudapp.azure.com"
 )
 
 if ([string]::IsNullOrWhiteSpace($SuperuserKey)) {
@@ -17,11 +16,8 @@ if ([string]::IsNullOrWhiteSpace($ApiKey)) {
 }
 
 $PROVIDER_IH_IDENTITY = $ProviderIdentityUrl  # Provider IdentityHub Identity API
-$CONSUMER_IH_IDENTITY = $ConsumerIdentityUrl  # Consumer IdentityHub Identity API
-$PROVIDER_DID = "did:web:provider-identityhub%3A7093"
-$CONSUMER_DID = "did:web:consumer-identityhub%3A7083"
+$PROVIDER_DID = $ProviderDid
 $PROVIDER_MGMT = $ProviderMgmtUrl
-$CONSUMER_MGMT = $ConsumerMgmtUrl
 
 Write-Host "=== Seeding Provider IdentityHub ===" -ForegroundColor Cyan
 
@@ -77,70 +73,6 @@ try {
     }
 }
 
-Write-Host "`n=== Seeding Consumer IdentityHub ===" -ForegroundColor Cyan
-
-# Create consumer participant context
-Write-Host "Creating consumer participant context..."
-try {
-    $response = Invoke-RestMethod -Uri "$CONSUMER_IH_IDENTITY/v1alpha/participants" -Method Post `
-        -Headers @{"Content-Type"="application/json"; "x-api-key"=$SuperuserKey} `
-        -Body (@{
-            participantContextId = $CONSUMER_DID
-            did = $CONSUMER_DID
-            active = $true
-            key = @{
-                keyId = "$CONSUMER_DID#key-1"
-                privateKeyAlias = "$CONSUMER_DID-alias"
-                keyGeneratorParams = @{
-                    algorithm = "EdDSA"
-                    curve = "Ed25519"
-                }
-            }
-            apiKeys = @()
-            roles = @()
-        } | ConvertTo-Json -Depth 10)
-    
-    Write-Host "  Success!" -ForegroundColor Green
-    $clientSecret = $response.clientSecret
-    Write-Host "  Client Secret: (generated)" -ForegroundColor Yellow
-    
-    # Store the client secret in the consumer connector
-    Write-Host "`nStoring STS client secret in consumer connector..."
-    try {
-        Invoke-RestMethod -Uri "$CONSUMER_MGMT/v3/secrets" -Method Post `
-            -Headers @{"Content-Type"="application/json"; "x-api-key"=$ApiKey} `
-            -Body (@{
-                "@context" = @{ "@vocab" = "https://w3id.org/edc/v0.0.1/ns/" }
-                "@type" = "Secret"
-                "@id" = "$CONSUMER_DID-sts-client-secret"
-                value = $clientSecret
-            } | ConvertTo-Json -Depth 10) | Out-Null
-        Write-Host "  Stored!" -ForegroundColor Green
-    } catch {
-        if ($_.Exception.Message -match "409") {
-            # Update existing
-            Write-Host "  Secret exists, updating..." -ForegroundColor Yellow
-            Invoke-RestMethod -Uri "$CONSUMER_MGMT/v3/secrets" -Method Put `
-                -Headers @{"Content-Type"="application/json"; "x-api-key"=$ApiKey} `
-                -Body (@{
-                    "@context" = @{ "@vocab" = "https://w3id.org/edc/v0.0.1/ns/" }
-                    "@type" = "Secret"
-                    "@id" = "$CONSUMER_DID-sts-client-secret"
-                    value = $clientSecret
-                } | ConvertTo-Json -Depth 10) | Out-Null
-            Write-Host "  Updated!" -ForegroundColor Green
-        } else {
-            throw
-        }
-    }
-    
-} catch {
-    Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
-    if ($_.ErrorDetails.Message) {
-        Write-Host "  Details: $($_.ErrorDetails.Message)" -ForegroundColor Yellow
-    }
-}
-
 Write-Host "`n=== Storing Membership Credentials ===" -ForegroundColor Cyan
 
 # First, activate participants and publish DIDs
@@ -155,7 +87,6 @@ function Get-Base64UrlEncoded {
 }
 
 $providerDidB64 = Get-Base64UrlEncoded $PROVIDER_DID
-$consumerDidB64 = Get-Base64UrlEncoded $CONSUMER_DID
 
 Write-Host "Activating provider participant context..."
 try {
@@ -171,19 +102,6 @@ try {
     }
 }
 
-Write-Host "Activating consumer participant context..."
-try {
-    Invoke-RestMethod -Uri "$CONSUMER_IH_IDENTITY/v1alpha/participants/$consumerDidB64/state?isActive=true" -Method Post `
-        -Headers @{"Content-Type"="application/json"; "x-api-key"=$SuperuserKey} `
-        -Body "{}" | Out-Null
-    Write-Host "  Activated" -ForegroundColor Green
-} catch {
-    if ($_.Exception.Message -notmatch "400") {
-        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Yellow
-    } else {
-        Write-Host "  Already active" -ForegroundColor Yellow
-    }
-}
 
 Write-Host "`n=== Publishing DID Documents ===" -ForegroundColor Cyan
 
@@ -197,15 +115,6 @@ try {
     Write-Host "  Error or already published: $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
-Write-Host "Publishing consumer DID..."
-try {
-    Invoke-RestMethod -Uri "$CONSUMER_IH_IDENTITY/v1alpha/participants/$consumerDidB64/dids/publish" -Method Post `
-        -Headers @{"Content-Type"="application/json"; "x-api-key"=$SuperuserKey} `
-        -Body (@{ did = $CONSUMER_DID } | ConvertTo-Json) | Out-Null
-    Write-Host "  Published" -ForegroundColor Green
-} catch {
-    Write-Host "  Error or already published: $($_.Exception.Message)" -ForegroundColor Yellow
-}
 
 Write-Host "`n=== Storing Membership Credentials ===" -ForegroundColor Cyan
 

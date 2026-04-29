@@ -6,7 +6,7 @@ metadata:
 data:
   controlplane-provider.properties: |
     # identity
-    edc.participant.id=did:web:provider-identityhub%3A7093
+    edc.participant.id=did:web:pilots-dataspace.westeurope.cloudapp.azure.com
     edc.hostname=provider-controlplane
     
     # Base listener (explicit to avoid port conflicts)
@@ -27,67 +27,17 @@ data:
     web.http.control.path=/control
     
     # DCP / Identity
-    edc.iam.issuer.id=did:web:provider-identityhub%3A7093
-    edc.iam.did.web.use.https=false
-    edc.iam.sts.privatekey.alias=did:web:provider-identityhub%3A7093-alias
-    edc.iam.sts.publickey.id=did:web:provider-identityhub%3A7093#key-1
-    edc.iam.sts.oauth.client.id=did:web:provider-identityhub%3A7093
-    edc.iam.sts.oauth.client.secret.alias=did:web:provider-identityhub%3A7093-sts-client-secret
+    edc.iam.issuer.id=did:web:pilots-dataspace.westeurope.cloudapp.azure.com
+    edc.iam.did.web.use.https=true
+    edc.iam.sts.privatekey.alias=did:web:pilots-dataspace.westeurope.cloudapp.azure.com-alias
+    edc.iam.sts.publickey.id=did:web:pilots-dataspace.westeurope.cloudapp.azure.com#key-1
+    edc.iam.sts.oauth.client.id=did:web:pilots-dataspace.westeurope.cloudapp.azure.com
+    edc.iam.sts.oauth.client.secret.alias=did:web:pilots-dataspace.westeurope.cloudapp.azure.com-sts-client-secret
     edc.iam.sts.oauth.token.url=http://provider-identityhub:7096/api/sts/token
     
     # PostgreSQL persistence
     edc.sql.schema.autocreate=true
     edc.datasource.default.url=jdbc:postgresql://postgres:5432/provider_controlplane
-    edc.datasource.default.user=edc
-    
-    # HashiCorp Vault
-    edc.vault.hashicorp.url=http://vault:8200
-    edc.vault.hashicorp.api.secret.path=/v1/secret
-    edc.vault.hashicorp.api.health.check.path=/v1/sys/health
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: controlplane-consumer-config
-  namespace: pilots-dataspace
-data:
-  controlplane-consumer.properties: |
-    edc.participant.id=did:web:consumer-identityhub%3A7083
-    edc.hostname=consumer-controlplane
-    
-    # Base listener (otherwise defaults to 8181)
-    web.http.port=28181
-    web.http.path=/api
-    
-    # Management API (consumer local admin)
-    web.http.management.port=29193
-    web.http.management.path=/management
-    web.http.management.auth.type=tokenbased
-    
-    # Protocol API (DSP)
-    web.http.protocol.port=29194
-    web.http.protocol.path=/protocol
-    edc.dsp.callback.address=http://consumer-controlplane:29194/protocol
-    
-    # Control API (DP selector control etc. - optional but keep for symmetry)
-    web.http.control.port=29192
-    web.http.control.path=/control
-    
-    # For local demo, keep the same "not production" defaults
-    edc.receiver.http.endpoint=http://consumer-controlplane:29194/protocol
-    
-    # DCP / Identity
-    edc.iam.issuer.id=did:web:consumer-identityhub%3A7083
-    edc.iam.did.web.use.https=false
-    edc.iam.sts.privatekey.alias=did:web:consumer-identityhub%3A7083-alias
-    edc.iam.sts.publickey.id=did:web:consumer-identityhub%3A7083#key-1
-    edc.iam.sts.oauth.client.id=did:web:consumer-identityhub%3A7083
-    edc.iam.sts.oauth.client.secret.alias=did:web:consumer-identityhub%3A7083-sts-client-secret
-    edc.iam.sts.oauth.token.url=http://consumer-identityhub:7086/api/sts/token
-    
-    # PostgreSQL persistence
-    edc.sql.schema.autocreate=true
-    edc.datasource.default.url=jdbc:postgresql://postgres:5432/consumer_controlplane
     edc.datasource.default.user=edc
     
     # HashiCorp Vault
@@ -129,7 +79,7 @@ spec:
         command:
         - sh
         - -c
-        - unset WEB_HTTP_PORT WEB_HTTP_PATH && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/controlplane-provider.properties -Dedc.demo.dcp.issuer.did=did:web:did-server%3A9876 -jar edc-controlplane.jar
+        - unset WEB_HTTP_PORT WEB_HTTP_PATH && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/controlplane-provider.properties -Dedc.demo.dcp.issuer.did=did:web:pilots-dataspace.westeurope.cloudapp.azure.com -jar edc-controlplane.jar
         ports:
         - containerPort: 18181
           name: default
@@ -175,91 +125,6 @@ spec:
         configMap:
           name: controlplane-provider-config
 ---
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: consumer-controlplane
-  namespace: pilots-dataspace
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: consumer-controlplane
-  template:
-    metadata:
-      labels:
-        app: consumer-controlplane
-    spec:
-      initContainers:
-      - name: wait-for-postgres
-        image: busybox:latest
-        command: ['sh', '-c', 'until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done;']
-      - name: wait-for-vault
-        image: busybox:latest
-        command: ['sh', '-c', 'until nc -z vault 8200; do echo waiting for vault; sleep 2; done;']
-      - name: wait-for-identityhub
-        image: busybox:latest
-        command: ['sh', '-c', 'until nc -z consumer-identityhub 7080; do echo waiting for consumer-identityhub; sleep 2; done;']
-      - name: wait-for-did-server
-        image: busybox:latest
-        command: ['sh', '-c', 'until nc -z did-server 9876; do echo waiting for did-server; sleep 2; done;']
-      containers:
-      - name: controlplane
-        image: pilotsdataspaceregistry.azurecr.io/controlplane:latest
-        command:
-        - sh
-        - -c
-        - unset WEB_HTTP_PORT WEB_HTTP_PATH && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/controlplane-consumer.properties -Dedc.demo.dcp.issuer.did=did:web:did-server%3A9876 -jar edc-controlplane.jar
-        env:
-        - name: WEB_HTTP_MANAGEMENT_AUTH_KEY
-          valueFrom:
-            secretKeyRef:
-              name: pilots-dataspace-secrets
-              key: api-auth-key
-        - name: EDC_API_AUTH_KEY
-          valueFrom:
-            secretKeyRef:
-              name: pilots-dataspace-secrets
-              key: api-auth-key
-        - name: EDC_DATASOURCE_DEFAULT_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: pilots-dataspace-secrets
-              key: postgres-password
-        - name: EDC_VAULT_HASHICORP_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: pilots-dataspace-secrets
-              key: vault-token
-        ports:
-        - containerPort: 28181
-          name: default
-        - containerPort: 29192
-          name: control
-        - containerPort: 29193
-          name: management
-        - containerPort: 29194
-          name: protocol
-        volumeMounts:
-        - name: config
-          mountPath: /app/config
-        livenessProbe:
-          httpGet:
-            path: /api/check/health
-            port: 28181
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /api/check/health
-            port: 28181
-          initialDelaySeconds: 10
-          periodSeconds: 5
-      volumes:
-      - name: config
-        configMap:
-          name: controlplane-consumer-config
----
 apiVersion: v1
 kind: Service
 metadata:
@@ -280,28 +145,5 @@ spec:
     name: management
   - port: 19194
     targetPort: 19194
-    name: protocol
-  type: ClusterIP
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: consumer-controlplane
-  namespace: pilots-dataspace
-spec:
-  selector:
-    app: consumer-controlplane
-  ports:
-  - port: 28181
-    targetPort: 28181
-    name: default
-  - port: 29192
-    targetPort: 29192
-    name: control
-  - port: 29193
-    targetPort: 29193
-    name: management
-  - port: 29194
-    targetPort: 29194
     name: protocol
   type: ClusterIP

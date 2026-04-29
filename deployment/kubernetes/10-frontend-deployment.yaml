@@ -72,11 +72,17 @@ metadata:
   name: frontend-ingress
   namespace: pilots-dataspace
   annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   ingressClassName: nginx
+  tls:
+  - hosts:
+    - pilots-dataspace.westeurope.cloudapp.azure.com
+    secretName: pilots-dataspace-tls
   rules:
-  - http:
+  - host: pilots-dataspace.westeurope.cloudapp.azure.com
+    http:
       paths:
       - path: /
         pathType: Prefix

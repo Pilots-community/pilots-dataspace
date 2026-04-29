@@ -1,44 +1,25 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: pilots-provider-mgmt-ingress
-  namespace: pilots-dataspace
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /management/$1
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
-    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
-    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-Api-Key"
-    nginx.ingress.kubernetes.io/enable-cors: "true"
-spec:
-  ingressClassName: nginx
-  rules:
-  - http:
-      paths:
-      - path: /provider/management/(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: provider-controlplane
-            port:
-              number: 19193
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
   name: pilots-provider-protocol-ingress
   namespace: pilots-dataspace
   annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/rewrite-target: /protocol/$1
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/cors-allow-origin: "*"
     nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
     nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-Api-Key"
     nginx.ingress.kubernetes.io/enable-cors: "true"
 spec:
   ingressClassName: nginx
+  tls:
+  - hosts:
+    - pilots-dataspace.westeurope.cloudapp.azure.com
+    secretName: pilots-dataspace-tls
   rules:
-  - http:
+  - host: pilots-dataspace.westeurope.cloudapp.azure.com
+    http:
       paths:
       - path: /provider/protocol/(.*)
         pathType: ImplementationSpecific
@@ -51,70 +32,25 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: pilots-consumer-mgmt-ingress
-  namespace: pilots-dataspace
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /management/$1
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
-    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
-    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-Api-Key"
-    nginx.ingress.kubernetes.io/enable-cors: "true"
-spec:
-  ingressClassName: nginx
-  rules:
-  - http:
-      paths:
-      - path: /consumer/management/(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: consumer-controlplane
-            port:
-              number: 29193
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: pilots-consumer-protocol-ingress
-  namespace: pilots-dataspace
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /protocol/$1
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
-    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
-    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-Api-Key"
-    nginx.ingress.kubernetes.io/enable-cors: "true"
-spec:
-  ingressClassName: nginx
-  rules:
-  - http:
-      paths:
-      - path: /consumer/protocol/(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: consumer-controlplane
-            port:
-              number: 29194
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
   name: pilots-identity-ingress
   namespace: pilots-dataspace
   annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/rewrite-target: /$1
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/cors-allow-origin: "*"
     nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
     nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-Api-Key"
     nginx.ingress.kubernetes.io/enable-cors: "true"
 spec:
   ingressClassName: nginx
+  tls:
+  - hosts:
+    - pilots-dataspace.westeurope.cloudapp.azure.com
+    secretName: pilots-dataspace-tls
   rules:
-  - host: ""
+  - host: pilots-dataspace.westeurope.cloudapp.azure.com
     http:
       paths:
       # Provider IdentityHub - DID API
@@ -125,35 +61,8 @@ spec:
             name: provider-identityhub
             port:
               number: 7093
-      
-      # Provider IdentityHub - STS API
-      - path: /provider/identity/sts/(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: provider-identityhub
-            port:
-              number: 7096
-      
-      # Consumer IdentityHub - DID API
-      - path: /consumer/identity/did/(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: consumer-identityhub
-            port:
-              number: 7083
-      
-      # Consumer IdentityHub - STS API
-      - path: /consumer/identity/sts/(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: consumer-identityhub
-            port:
-              number: 7086
-      
-      # DID Server
+
+      # DID Server (legacy path-based access; primary endpoint is /.well-known/did.json via 13-did-web.yaml)
       - path: /did-server/(.*)
         pathType: ImplementationSpecific
         backend:
@@ -161,3 +70,68 @@ spec:
             name: did-server
             port:
               number: 9876
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pilots-identity-credentials-ingress
+  namespace: pilots-dataspace
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /api/credentials/$1
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-Api-Key"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - pilots-dataspace.westeurope.cloudapp.azure.com
+    secretName: pilots-dataspace-tls
+  rules:
+  - host: pilots-dataspace.westeurope.cloudapp.azure.com
+    http:
+      paths:
+      # Provider IdentityHub - Credentials API
+      - path: /provider/identity/credentials/(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: provider-identityhub
+            port:
+              number: 7091
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pilots-dataplane-public-ingress
+  namespace: pilots-dataspace
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /public/$1
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-Api-Key"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - pilots-dataspace.westeurope.cloudapp.azure.com
+    secretName: pilots-dataspace-tls
+  rules:
+  - host: pilots-dataspace.westeurope.cloudapp.azure.com
+    http:
+      paths:
+      - path: /provider/dataplane/public/(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: provider-dataplane
+            port:
+              number: 38185

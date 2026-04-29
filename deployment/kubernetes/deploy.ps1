@@ -38,21 +38,18 @@ kubectl apply -f 06-identityhub.yaml
 
 Write-Host "`nWaiting for IdentityHub to be ready..." -ForegroundColor Yellow
 kubectl wait --for=condition=ready pod -l app=provider-identityhub -n pilots-dataspace --timeout=180s
-kubectl wait --for=condition=ready pod -l app=consumer-identityhub -n pilots-dataspace --timeout=180s
 
 Write-Host "`nDeploying Control Plane components..." -ForegroundColor Yellow
 kubectl apply -f 07-controlplane.yaml
 
 Write-Host "`nWaiting for Control Plane to be ready..." -ForegroundColor Yellow
 kubectl wait --for=condition=ready pod -l app=provider-controlplane -n pilots-dataspace --timeout=180s
-kubectl wait --for=condition=ready pod -l app=consumer-controlplane -n pilots-dataspace --timeout=180s
 
 Write-Host "`nDeploying Data Plane components..." -ForegroundColor Yellow
 kubectl apply -f 08-dataplane.yaml
 
 Write-Host "`nWaiting for Data Plane to be ready..." -ForegroundColor Yellow
 kubectl wait --for=condition=ready pod -l app=provider-dataplane -n pilots-dataspace --timeout=180s
-kubectl wait --for=condition=ready pod -l app=consumer-dataplane -n pilots-dataspace --timeout=180s
 
 Write-Host "`n======================================" -ForegroundColor Green
 Write-Host "Deployment completed successfully!" -ForegroundColor Green
@@ -63,5 +60,5 @@ kubectl get pods -n pilots-dataspace
 
 Write-Host "`nTo access services locally, run:" -ForegroundColor Cyan
 Write-Host "kubectl port-forward -n pilots-dataspace svc/provider-controlplane 19193:19193" -ForegroundColor White
-Write-Host "kubectl port-forward -n pilots-dataspace svc/consumer-controlplane 29193:29193" -ForegroundColor White
+
 
