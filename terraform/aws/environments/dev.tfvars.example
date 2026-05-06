@@ -1,0 +1,7 @@
+environment    = "dev"
+region         = "eu-west-3"
+root_domain    = "pilots.t-mining.ma-de.be"
+image_tag      = "latest"
+ecs_cpu        = 256
+ecs_memory     = 512
+ghcr_credentials_secret_arn = ""
