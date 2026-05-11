@@ -1,6 +1,6 @@
 environment    = "dev"
 region         = "eu-west-3"
-root_domain    = "pilots.t-mining.ma-de.be"
+root_domain    = "pilots.yourcompany.com"
 image_tag      = "latest"
 ecs_cpu        = 256
 ecs_memory     = 512

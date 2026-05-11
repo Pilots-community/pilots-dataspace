@@ -126,6 +126,19 @@ terraform plan -var-file=environments/dev.tfvars
 terraform apply -var-file=environments/dev.tfvars
 ```
 
+### Certificate validation preflight (important)
+
+If ACM stays in `PENDING_VALIDATION`, `terraform apply` can hang for a long time. Before applying, ensure your registrar/DNS provider delegates the root domain to the Route53 nameservers from output `route53_nameservers`.
+
+You can also verify the ACM CNAME records are visible publicly:
+
+```bash
+dig CNAME _fc0d5cfaa6e5ecf008e6f38f372145dd.pilots.t-mining.ma-de.be +short
+dig CNAME _f640f4eb7b833361535ac9554b42e94f.dev.pilots.t-mining.ma-de.be +short
+```
+
+If these records do not resolve from public DNS, ACM validation cannot complete yet.
+
 ## GHCR preflight check
 
 Before `terraform apply`, verify that `ghcr_credentials_secret_arn` is set and readable by your current AWS session.
@@ -164,3 +177,4 @@ If both commands succeed, ECS can use this secret for GHCR authentication.
 - This keeps configuration rooted in the existing codebase files and avoids drift between Terraform-only copies and the connector config directory.
 - To reduce lock-in, we keep core runtime components containerized (including Postgres and Vault) instead of replacing them with AWS managed data services.
 - Service-specific health endpoints may be tuned further once production endpoint behavior is confirmed.
+- ACM certificate validation timeout is configured to fail faster (`20m`) so applies do not wait for 75+ minutes when DNS delegation is missing.
