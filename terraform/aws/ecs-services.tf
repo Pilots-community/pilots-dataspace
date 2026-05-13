@@ -63,8 +63,8 @@ resource "aws_ecs_task_definition" "services" {
         image     = each.value.image
         essential = true
         portMappings = [
-          {
-            containerPort = each.value.container_port
+          for port in each.value.container_ports : {
+            containerPort = port
             protocol      = "tcp"
           }
         ]

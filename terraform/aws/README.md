@@ -176,5 +176,32 @@ If both commands succeed, ECS can use this secret for GHCR authentication.
 - Runtime config and cert files are injected into containers at startup, but sourced directly from the repository `config/` and `deployment/` files at Terraform plan/apply time.
 - This keeps configuration rooted in the existing codebase files and avoids drift between Terraform-only copies and the connector config directory.
 - To reduce lock-in, we keep core runtime components containerized (including Postgres and Vault) instead of replacing them with AWS managed data services.
+
+## Seeding the environment
+
+Once the infrastructure is deployed and DNS is resolving, you must seed the IdentityHub and Control Plane with initial data.
+
+1.  **Ensure DNS is resolving**: Run `./validate.sh` and verify that the domain resolves and HTTPS is working.
+2.  **Run the seed script**:
+    ```bash
+    chmod +x seed-aws.sh
+    ./seed-aws.sh
+    ```
+
+This script will:
+- Create the participant context in **IdentityHub**.
+- Activate the context and publish the **Connector DID**.
+- Store the **STS Client Secret** in the Control Plane vault.
+- Register the **Local Issuer** in the Control Plane so it trusts its own credentials.
+
+> [!NOTE]
+> The **Issuer DID Document** (served by nginx on `/did-server`) is automatically seeded by Terraform using the content of `deployment/assets/issuer/did.json`.
+
+## Security Considerations
+
+The `/identity` and `/mgmt` APIs are currently exposed on the Application Load Balancer to allow for remote seeding. In a production environment, you should:
+- Restrict these paths to your management IP address in `ssl-routing.tf`.
+- Or use a Bastion host/VPN to reach these APIs internally.
+
 - Service-specific health endpoints may be tuned further once production endpoint behavior is confirmed.
 - ACM certificate validation timeout is configured to fail faster (`20m`) so applies do not wait for 75+ minutes when DNS delegation is missing.

@@ -151,12 +151,14 @@ resource "aws_lb_listener" "http_redirect" {
 
 locals {
   service_mappings = {
-    dashboard  = { port = 80, path = "/dashboard*" }
+    dashboard   = { port = 80, path = "/dashboard*" }
     credentials = { port = 7091, path = "/credentials*" }
-    did-api    = { port = 7093, path = "/did-api*" }
-    did-server = { port = 9876, path = "/did-server*" }
-    dsp        = { port = 19194, path = "/dsp*" }
-    data       = { port = 38185, path = "/data*" }
+    identity    = { port = 7092, path = "/identity*" }
+    did-api     = { port = 7093, path = "/did-api*" }
+    did-server  = { port = 9876, path = "/did-server*" }
+    mgmt        = { port = 19193, path = "/mgmt*" }
+    dsp         = { port = 19194, path = "/dsp*" }
+    data        = { port = 38185, path = "/data*" }
   }
 }
 

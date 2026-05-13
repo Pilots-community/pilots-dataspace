@@ -99,7 +99,7 @@ locals {
   services = {
     postgres = {
       image          = "postgres:16-alpine"
-      container_port = 5432
+      container_ports = [5432]
       cpu            = 256
       memory         = 512
       environment = [
@@ -119,7 +119,7 @@ locals {
     }
     vault = {
       image          = "hashicorp/vault:1.15"
-      container_port = 8200
+      container_ports = [8200]
       cpu            = 256
       memory         = 512
       environment    = []
@@ -128,7 +128,7 @@ locals {
     }
     did-server = {
       image          = "nginx:alpine"
-      container_port = 9876
+      container_ports = [9876]
       cpu            = 256
       memory         = 512
       environment = [
@@ -144,16 +144,20 @@ locals {
     }
     dashboard = {
       image          = "ghcr.io/pilots-community/pilots-dataspace/dashboard:${var.image_tag}"
-      container_port = 80
+      container_ports = [80]
       cpu            = var.ecs_cpu
       memory         = var.ecs_memory
-      environment    = []
+      environment = [
+        { name = "CP_HOST", value = "controlplane.pilots.internal" },
+        { name = "DP_HOST", value = "dataplane.pilots.internal" },
+        { name = "IH_HOST", value = "identityhub.pilots.internal" }
+      ]
       command        = null
       mount_points   = []
     }
     identityhub = {
       image          = "ghcr.io/pilots-community/pilots-dataspace/identityhub:${var.image_tag}"
-      container_port = 7091
+      container_ports = [7090, 7091, 7092, 7093, 7095, 7096]
       cpu            = var.ecs_cpu
       memory         = var.ecs_memory
       environment = [
@@ -168,7 +172,7 @@ locals {
     }
     controlplane = {
       image          = "ghcr.io/pilots-community/pilots-dataspace/controlplane:${var.image_tag}"
-      container_port = 19194
+      container_ports = [18181, 19192, 19193, 19194]
       cpu            = var.ecs_cpu
       memory         = var.ecs_memory
       environment = [
@@ -183,7 +187,7 @@ locals {
     }
     dataplane = {
       image          = "ghcr.io/pilots-community/pilots-dataspace/dataplane:${var.image_tag}"
-      container_port = 38185
+      container_ports = [38181, 38182, 38185]
       cpu            = var.ecs_cpu
       memory         = var.ecs_memory
       environment = [
@@ -204,9 +208,13 @@ locals {
     dashboard = [{ route = "dashboard", port = 80 }]
     identityhub = [
       { route = "credentials", port = 7091 },
-      { route = "did-api", port = 7093 }
+      { route = "did-api", port = 7093 },
+      { route = "identity", port = 7092 }
     ]
-    controlplane = [{ route = "dsp", port = 19194 }]
+    controlplane = [
+      { route = "dsp", port = 19194 },
+      { route = "mgmt", port = 19193 }
+    ]
     dataplane    = [{ route = "data", port = 38185 }]
     did-server   = [{ route = "did-server", port = 9876 }]
   }

@@ -11,16 +11,16 @@ resource "aws_efs_access_point" "postgres_data" {
   file_system_id = aws_efs_file_system.pilots.id
 
   posix_user {
-    gid = 999
-    uid = 999
+    gid = 70
+    uid = 70
   }
 
   root_directory {
     path = "/postgres-data"
     creation_info {
-      owner_gid   = 999
-      owner_uid   = 999
-      permissions = "0750"
+      owner_gid   = 70
+      owner_uid   = 70
+      permissions = "0700"
     }
   }
 }
