@@ -4,14 +4,20 @@ locals {
   issuer_did_json = trimspace(file("${path.module}/../../deployment/assets/issuer/did.json"))
   nginx_conf      = trimspace(file("${path.module}/../../deployment/nginx.conf"))
 
-  postgres_init_sql = trimspace(file("${path.module}/../../config/docker/postgres-connector-init.sql"))
-
   identityhub_config = replace(
     replace(
       replace(
         replace(
           replace(
-            file("${path.module}/../../config/docker/identityhub-connector.properties"),
+            replace(
+              replace(
+                file("${path.module}/../../config/docker/identityhub-connector.properties"),
+                "edc.datasource.default.user=edc",
+                "edc.datasource.default.user=${var.db_username}"
+              ),
+              "edc.datasource.default.password=edc",
+              "edc.datasource.default.password=$${DB_PASSWORD}"
+            ),
             "edc.hostname=identityhub",
             "edc.hostname=${var.root_domain}"
           ),
@@ -22,7 +28,7 @@ locals {
         "did:web:${var.root_domain}%3A7093"
       ),
       "jdbc:postgresql://postgres:5432/identityhub",
-      "jdbc:postgresql://postgres.pilots.internal:5432/identityhub"
+      "jdbc:postgresql://${aws_db_instance.postgres.endpoint}/identityhub"
     ),
     "http://vault:8200",
     "http://vault.pilots.internal:8200"
@@ -35,7 +41,15 @@ locals {
           replace(
             replace(
               replace(
-                file("${path.module}/../../config/docker/controlplane-connector.properties"),
+                replace(
+                  replace(
+                    file("${path.module}/../../config/docker/controlplane-connector.properties"),
+                    "edc.datasource.default.user=edc",
+                    "edc.datasource.default.user=${var.db_username}"
+                  ),
+                  "edc.datasource.default.password=edc",
+                  "edc.datasource.default.password=$${DB_PASSWORD}"
+                ),
                 "edc.participant.id=did:web:identityhub%3A7093",
                 "edc.participant.id=did:web:${var.root_domain}%3A7093"
               ),
@@ -55,7 +69,7 @@ locals {
       "http://identityhub.pilots.internal:7096/api/sts/token"
     ),
     "jdbc:postgresql://postgres:5432/controlplane",
-    "jdbc:postgresql://postgres.pilots.internal:5432/controlplane"
+    "jdbc:postgresql://${aws_db_instance.postgres.endpoint}/controlplane"
   )
 
   controlplane_config_final = replace(
@@ -70,7 +84,15 @@ locals {
         replace(
           replace(
             replace(
-              file("${path.module}/../../config/docker/dataplane-connector.properties"),
+              replace(
+                replace(
+                  file("${path.module}/../../config/docker/dataplane-connector.properties"),
+                  "edc.datasource.default.user=edc",
+                  "edc.datasource.default.user=${var.db_username}"
+                ),
+                "edc.datasource.default.password=edc",
+                "edc.datasource.default.password=$${DB_PASSWORD}"
+              ),
               "edc.hostname=dataplane",
               "edc.hostname=${var.root_domain}"
             ),
@@ -87,7 +109,7 @@ locals {
       "edc.dataplane.api.public.baseurl=https://${var.root_domain}/data/public"
     ),
     "jdbc:postgresql://postgres:5432/dataplane",
-    "jdbc:postgresql://postgres.pilots.internal:5432/dataplane"
+    "jdbc:postgresql://${aws_db_instance.postgres.endpoint}/dataplane"
   )
 
   dataplane_config_final = replace(
@@ -97,26 +119,6 @@ locals {
   )
 
   services = {
-    postgres = {
-      image          = "postgres:16-alpine"
-      container_ports = [5432]
-      cpu            = 256
-      memory         = 512
-      environment = [
-        { name = "POSTGRES_USER", value = "edc" },
-        { name = "POSTGRES_PASSWORD", value = "edc" },
-        { name = "POSTGRES_DB", value = "controlplane" },
-        { name = "POSTGRES_INIT_SQL", value = local.postgres_init_sql }
-      ]
-      command = [
-        "sh",
-        "-c",
-        "printf '%s\n' \"$POSTGRES_INIT_SQL\" > /docker-entrypoint-initdb.d/init.sql && exec docker-entrypoint.sh postgres"
-      ]
-      mount_points = [
-        { sourceVolume = "postgres-data", containerPath = "/var/lib/postgresql/data", readOnly = false }
-      ]
-    }
     vault = {
       image          = "hashicorp/vault:1.15"
       container_ports = [8200]
@@ -222,20 +224,11 @@ locals {
   ghcr_images = toset(["dashboard", "identityhub", "controlplane", "dataplane"])
 
   service_desired_counts = {
-    postgres     = 1
     vault        = 1
-    did-server   = 0
-    dashboard    = 0
-    identityhub  = 0
-    controlplane = 0
-    dataplane    = 0
-  }
-
-  autoscaled_routes = {
-    did-server   = "did-server"
-    dashboard    = "dashboard"
-    identityhub  = "credentials"
-    controlplane = "dsp"
-    dataplane    = "data"
+    did-server   = 1
+    dashboard    = 1
+    identityhub  = 1
+    controlplane = 1
+    dataplane    = 1
   }
 }

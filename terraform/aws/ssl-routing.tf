@@ -173,7 +173,7 @@ resource "aws_lb_target_group" "services" {
 
   health_check {
     path                = "/" # Default health check, might need tuning per service
-    interval            = 30
+    interval            = 10
     timeout             = 5
     healthy_threshold   = 2
     unhealthy_threshold = 2

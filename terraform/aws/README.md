@@ -3,9 +3,10 @@
 ## What this stack deploys
 
 - ECS Fargate services for `dashboard`, `identityhub`, `controlplane`, and `dataplane`
-- ECS Fargate support services mirroring local compose: `postgres`, `vault`, and `did-server`
-- Persistent storage for `postgres` using EFS (data survives task/service restarts)
-- Demand-based autoscaling (`0..1`) for externally routed dev services to reduce idle cost
+- ECS Fargate support service: `vault` and `did-server`
+- Managed AWS RDS (PostgreSQL) for all databases (Control Plane, Data Plane, IdentityHub)
+- Secure credential management using **AWS Secrets Manager** for database passwords
+- Permanent ECS Fargate tasks (Desired count = 1) for all services to ensure fast response times
 - Application Load Balancer with HTTPS and suffix/path routing:
   - `https://<root-domain>/dashboard/...`
   - `https://<root-domain>/credentials/...`
@@ -114,8 +115,9 @@ Then update:
 - `ghcr_credentials_secret_arn`
 - optional sizing (`ecs_cpu`, `ecs_memory`)
 - optional rollout image tag (`image_tag`)
+- RDS credentials (`db_username`, `db_password`)
 
-Dev defaults are intentionally cost-lean (`ecs_cpu=256`, `ecs_memory=512`).
+Dev defaults are intentionally cost-lean (`ecs_cpu=256`, `ecs_memory=512`, `db_instance_class=db.t4g.micro`).
 
 ## Applying Terraform config
 
@@ -130,52 +132,20 @@ terraform apply -var-file=environments/dev.tfvars
 
 If ACM stays in `PENDING_VALIDATION`, `terraform apply` can hang for a long time. Before applying, ensure your registrar/DNS provider delegates the root domain to the Route53 nameservers from output `route53_nameservers`.
 
-You can also verify the ACM CNAME records are visible publicly:
+### Database Initialization
+
+RDS is initialized with a default `controlplane` database. However, the `identityhub` and `dataplane` databases must be created manually before the services can fully start (or they will retry).
+
+Once RDS is up, you can retrieve the password from Secrets Manager and run the following command from the project root (requires `psql` locally and network access to RDS):
 
 ```bash
-dig CNAME _fc0d5cfaa6e5ecf008e6f38f372145dd.pilots.t-mining.ma-de.be +short
-dig CNAME _f640f4eb7b833361535ac9554b42e94f.dev.pilots.t-mining.ma-de.be +short
+# Get RDS Endpoint and Secret
+export RDS_HOST=<rds-endpoint-host>
+export PGPASSWORD=$(aws secretsmanager get-secret-value --secret-id pilots-connector-db-password-dev --region eu-west-3 --query SecretString --output text)
+psql -h $RDS_HOST -U edc -d controlplane -f config/docker/postgres-connector-init.sql
 ```
 
-If these records do not resolve from public DNS, ACM validation cannot complete yet.
-
-## GHCR preflight check
-
-Before `terraform apply`, verify that `ghcr_credentials_secret_arn` is set and readable by your current AWS session.
-
-```bash
-# 1) Ensure ARN is set in tfvars (non-empty)
-rg '^\s*ghcr_credentials_secret_arn\s*=\s*".+"' environments/dev.tfvars
-
-# 2) Export the ARN from tfvars
-export GHCR_SECRET_ARN="$(sed -n 's/^\s*ghcr_credentials_secret_arn\s*=\s*"\(.*\)"/\1/p' environments/dev.tfvars)"
-
-# 3) Confirm the secret exists and can be read
-aws secretsmanager describe-secret --secret-id "$GHCR_SECRET_ARN" --region eu-west-3 >/dev/null && echo "Secret exists"
-aws secretsmanager get-secret-value --secret-id "$GHCR_SECRET_ARN" --region eu-west-3 --query ARN --output text
-```
-
-If both commands succeed, ECS can use this secret for GHCR authentication.
-
-## Image rollout behavior
-
-- Default image tag is `latest`.
-- ECS services are configured with `force_new_deployment = true`, so a new deployment is triggered on apply.
-- To pin/promote specific builds, set `image_tag` in tfvars and run `terraform apply`.
-
-## Scale-to-zero behavior (dev)
-
-- Routed services (`dashboard`, `identityhub`, `controlplane`, `dataplane`, `did-server`) start at `desired_count = 0`.
-- Application Auto Scaling increases them to `1` on ALB traffic and scales back to `0` after idle cooldown.
-- `postgres` and `vault` stay at `1` to keep dependency startup predictable.
-- First request after idle can return a temporary 5xx/timeout while tasks cold-start (expected in this mode).
-
-## Notes / improvements for review
-
-- The old EC2 SSH key, instance bootstrap, and manual docker-compose deployment have been removed from Terraform.
-- Runtime config and cert files are injected into containers at startup, but sourced directly from the repository `config/` and `deployment/` files at Terraform plan/apply time.
-- This keeps configuration rooted in the existing codebase files and avoids drift between Terraform-only copies and the connector config directory.
-- To reduce lock-in, we keep core runtime components containerized (including Postgres and Vault) instead of replacing them with AWS managed data services.
+Note: If RDS is not publicly accessible (default), you may need to run this from a machine within the VPC or use a temporary ECS task.
 
 ## Seeding the environment
 
@@ -194,14 +164,9 @@ This script will:
 - Store the **STS Client Secret** in the Control Plane vault.
 - Register the **Local Issuer** in the Control Plane so it trusts its own credentials.
 
-> [!NOTE]
-> The **Issuer DID Document** (served by nginx on `/did-server`) is automatically seeded by Terraform using the content of `deployment/assets/issuer/did.json`.
-
 ## Security Considerations
 
 The `/identity` and `/mgmt` APIs are currently exposed on the Application Load Balancer to allow for remote seeding. In a production environment, you should:
 - Restrict these paths to your management IP address in `ssl-routing.tf`.
 - Or use a Bastion host/VPN to reach these APIs internally.
-
-- Service-specific health endpoints may be tuned further once production endpoint behavior is confirmed.
-- ACM certificate validation timeout is configured to fail faster (`20m`) so applies do not wait for 75+ minutes when DNS delegation is missing.
+- Use a strong `db_password` and do not commit it to the repository.

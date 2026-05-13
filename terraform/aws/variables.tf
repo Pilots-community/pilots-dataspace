@@ -37,3 +37,22 @@ variable "ecs_memory" {
   type        = number
   default     = 512
 }
+
+variable "db_username" {
+  description = "Username for the RDS instance"
+  type        = string
+  default     = "edc"
+}
+
+variable "db_password" {
+  description = "Password for the RDS instance (Initial value, managed in Secrets Manager/Console after creation)"
+  type        = string
+  sensitive   = true
+  default     = "edcedcedc"
+}
+
+variable "db_instance_class" {
+  description = "The instance type of the RDS instance"
+  type        = string
+  default     = "db.t4g.micro"
+}

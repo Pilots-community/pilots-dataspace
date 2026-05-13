@@ -19,7 +19,7 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_managed" {
 }
 
 resource "aws_iam_role_policy" "ecs_task_execution_secret_access" {
-  name = "pilots-ecs-ghcr-access-${var.environment}"
+  name = "pilots-ecs-secret-access-${var.environment}"
   role = aws_iam_role.ecs_task_execution.id
 
   policy = jsonencode({
@@ -31,7 +31,11 @@ resource "aws_iam_role_policy" "ecs_task_execution_secret_access" {
           "secretsmanager:GetSecretValue",
           "kms:Decrypt"
         ]
-        Resource = var.ghcr_credentials_secret_arn == "" ? "*" : var.ghcr_credentials_secret_arn
+        Resource = compact([
+          var.ghcr_credentials_secret_arn,
+          aws_secretsmanager_secret.db_password.arn,
+          aws_secretsmanager_secret.rds_credentials.arn
+        ])
       }
     ]
   })

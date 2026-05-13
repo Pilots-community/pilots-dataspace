@@ -60,14 +60,14 @@ resource "aws_security_group" "ecs_tasks_sg" {
   }
 }
 
-resource "aws_security_group" "efs_sg" {
-  name        = "pilots-efs-sg"
-  description = "Allow ECS tasks to mount EFS"
+resource "aws_security_group" "rds_sg" {
+  name        = "pilots-rds-sg"
+  description = "Allow ECS tasks to connect to RDS"
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
-    from_port       = 2049
-    to_port         = 2049
+    from_port       = 5432
+    to_port         = 5432
     protocol        = "tcp"
     security_groups = [aws_security_group.ecs_tasks_sg.id]
   }

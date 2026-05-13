@@ -41,21 +41,6 @@ resource "aws_ecs_task_definition" "services" {
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task_execution.arn
 
-  dynamic "volume" {
-    for_each = each.key == "postgres" ? [1] : []
-    content {
-      name = "postgres-data"
-      efs_volume_configuration {
-        file_system_id     = aws_efs_file_system.pilots.id
-        transit_encryption = "ENABLED"
-        authorization_config {
-          access_point_id = aws_efs_access_point.postgres_data.id
-          iam             = "DISABLED"
-        }
-      }
-    }
-  }
-
   container_definitions = jsonencode([
     merge(
       {
@@ -69,6 +54,12 @@ resource "aws_ecs_task_definition" "services" {
           }
         ]
         environment = each.value.environment
+        secrets = contains(["identityhub", "controlplane", "dataplane"], each.key) ? [
+          {
+            name      = "DB_PASSWORD"
+            valueFrom = aws_secretsmanager_secret.db_password.arn
+          }
+        ] : []
         mountPoints = each.value.mount_points
         logConfiguration = {
           logDriver = "awslogs"
@@ -118,10 +109,4 @@ resource "aws_ecs_service" "services" {
   service_registries {
     registry_arn = aws_service_discovery_service.services[each.key].arn
   }
-
-  depends_on = [
-    aws_lb_listener.https,
-    aws_iam_role_policy_attachment.ecs_task_execution_managed,
-    aws_efs_mount_target.pilots
-  ]
 }
