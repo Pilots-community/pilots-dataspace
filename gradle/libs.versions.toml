@@ -39,4 +39,4 @@ edc-bom-identityhub = { module = "org.eclipse.edc:identityhub-bom", version.ref 
 
 [plugins]
 shadow = { id = "com.github.johnrengelman.shadow", version = "8.1.1" }
-docker = { id = "com.bmuschko.docker-remote-api", version = "9.4.0" }
+docker = { id = "com.bmuschko.docker-remote-api", version = "10.0.0" }
