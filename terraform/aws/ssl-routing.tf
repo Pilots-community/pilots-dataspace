@@ -172,7 +172,7 @@ resource "aws_lb_target_group" "services" {
   vpc_id   = data.aws_vpc.default.id
 
   health_check {
-    path                = "/" # Default health check, might need tuning per service
+    path                = each.key == "did-server" ? "/.well-known/did.json" : "/"
     interval            = 10
     timeout             = 5
     healthy_threshold   = 2

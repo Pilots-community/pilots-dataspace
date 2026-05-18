@@ -134,18 +134,19 @@ If ACM stays in `PENDING_VALIDATION`, `terraform apply` can hang for a long time
 
 ### Database Initialization
 
-RDS is initialized with a default `controlplane` database. However, the `identityhub` and `dataplane` databases must be created manually before the services can fully start (or they will retry).
+RDS is initialized with a default `controlplane` database. However, the `identityhub` and `dataplane` databases must be created before the services can fully start.
 
-Once RDS is up, you can retrieve the password from Secrets Manager and run the following command from the project root (requires `psql` locally and network access to RDS):
+Since RDS is private, you should use the provided **ECS Seeder Task** to initialize the database from within the VPC.
 
-```bash
-# Get RDS Endpoint and Secret
-export RDS_HOST=<rds-endpoint-host>
-export PGPASSWORD=$(aws secretsmanager get-secret-value --secret-id pilots-connector-db-password-dev --region eu-west-3 --query SecretString --output text)
-psql -h $RDS_HOST -U edc -d controlplane -f config/docker/postgres-connector-init.sql
-```
+1.  **Apply the Terraform config** to create the Task Definition.
+2.  **Run the seeder task** using the command from the terraform output:
+    ```bash
+    # You can fetch the command from terraform output
+    terraform output -raw db_seeder_command | bash
+    ```
+3.  **Verify completion**: Check the CloudWatch logs for the `/ecs/pilots-dev` log group with the prefix `db-seeder`. You should see `Database seeding completed successfully!`.
 
-Note: If RDS is not publicly accessible (default), you may need to run this from a machine within the VPC or use a temporary ECS task.
+Once this is done, the main services will be able to connect and start correctly on their next retry.
 
 ## Seeding the environment
 
