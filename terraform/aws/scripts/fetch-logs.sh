@@ -1,41 +1,35 @@
-#!/bin/bash
-# fetch-logs.sh - Fetch logs from all pilots ECS services
+#!/usr/bin/env bash
+set -euo pipefail
 
-ENVIRONMENT=${1:-dev}
-DURATION=${2:-30m}
-OUTPUT_FILE=${3:-services.log}
-PROFILE=${AWS_PROFILE:-}
+# Fetch recent CloudWatch logs for every pilots ECS service, into one file.
+#
+# Usage:
+#   ./scripts/fetch-logs.sh [duration] [output_file]
+#
+# Defaults: duration=30m, output_file=services.log
+# Reads log group name from `terraform output`.
 
-LOG_GROUP="/ecs/pilots-${ENVIRONMENT}"
-SERVICES=("controlplane" "dataplane" "identityhub" "dashboard" "did-server" "vault")
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TF_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DURATION="${1:-30m}"
+OUTPUT_FILE="${2:-services.log}"
 
-AWS_CMD="aws"
-if [ -n "${PROFILE}" ]; then
-    AWS_CMD="aws --profile ${PROFILE}"
-fi
+cd "${TF_DIR}"
+LOG_GROUP=$(terraform output -raw log_group_name)
 
-echo "=== Fetching logs for environment: ${ENVIRONMENT} ==="
-echo "Duration: ${DURATION}"
-echo "Output:   ${OUTPUT_FILE}"
-if [ -n "${PROFILE}" ]; then echo "Profile:  ${PROFILE}"; fi
-echo ""
+SERVICES=(controlplane dataplane identityhub dashboard did-server vault db-seeder seeder)
 
-# Clear the output file
-> "${OUTPUT_FILE}"
+: > "${OUTPUT_FILE}"
 
-for service in "${SERVICES[@]}"; do
-    echo "Processing ${service}..."
-    echo "################################################################################" >> "${OUTPUT_FILE}"
-    echo "# SERVICE: ${service}" >> "${OUTPUT_FILE}"
-    echo "################################################################################" >> "${OUTPUT_FILE}"
-    
-    # Use aws logs tail to fetch logs. It handles multiple log streams within the prefix.
-    # The flag name is --log-stream-name-prefix (not --log-stream-prefix)
-    $AWS_CMD logs tail "${LOG_GROUP}" --log-stream-name-prefix "${service}" --since "${DURATION}" --format short >> "${OUTPUT_FILE}" 2>&1
-    
-    echo "" >> "${OUTPUT_FILE}"
+for svc in "${SERVICES[@]}"; do
+  echo "Fetching ${svc}..."
+  {
+    printf '################################################################################\n'
+    printf '# %s\n' "${svc}"
+    printf '################################################################################\n'
+    aws logs tail "${LOG_GROUP}" --log-stream-name-prefix "${svc}" --since "${DURATION}" --format short 2>&1 || true
+    printf '\n'
+  } >> "${OUTPUT_FILE}"
 done
 
-echo ""
-echo "Done! Logs saved to ${OUTPUT_FILE}"
-echo "You can now analyze this file or share it with the team."
+echo "Done — wrote ${OUTPUT_FILE}"

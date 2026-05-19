@@ -1,7 +1,43 @@
-environment    = "dev"
-region         = "eu-west-3"
-root_domain    = "pilots.yourcompany.com"
-image_tag      = "latest"
-ecs_cpu        = 256
-ecs_memory     = 512
-ghcr_credentials_secret_arn = ""
+################################################################################
+# Pilots Dataspace — dev environment
+#
+# Copy to dev.tfvars and fill in. Do NOT commit dev.tfvars (gitignore covers it).
+################################################################################
+
+environment = "dev"
+region      = "eu-west-3"
+
+# Public domain. A Route53 hosted zone is created for it; you must delegate
+# the NS records from your registrar to AWS (the apply outputs them).
+root_domain = "pilots.yourcompany.com"
+
+# CIDR blocks allowed to reach the operator-facing ports:
+#   - 443  (dashboard)
+#   - 7092 (identityhub identity API)
+#   - 19193 (controlplane management API)
+# Add your workstation /32. Empty list = closed (no operator access).
+mgmt_cidrs = ["198.51.100.42/32"]
+
+# GHCR pull credentials. Create via:
+#   aws secretsmanager create-secret \
+#     --name pilots-ghcr-credentials \
+#     --secret-string '{"username":"<github-user>","password":"<classic-PAT-with-read:packages>"}' \
+#     --region eu-west-3
+# Then paste the returned ARN here.
+ghcr_credentials_secret_arn = "arn:aws:secretsmanager:eu-west-3:123456789012:secret:pilots-ghcr-credentials-XXXXXX"
+
+# Operator-held PEM keys, uploaded via scripts/upload-keys.sh after running
+# the repo-root ./generate-keys.sh.
+issuer_private_key_secret_arn    = "arn:aws:secretsmanager:eu-west-3:123456789012:secret:pilots-dev-issuer-private-key-XXXXXX"
+dataplane_private_key_secret_arn = "arn:aws:secretsmanager:eu-west-3:123456789012:secret:pilots-dev-dataplane-private-key-XXXXXX"
+dataplane_public_key_secret_arn  = "arn:aws:secretsmanager:eu-west-3:123456789012:secret:pilots-dev-dataplane-public-key-XXXXXX"
+
+# Image tag for all four GHCR-pulled services. Bump when a new build is published.
+image_tag = "latest"
+
+# Per-service Fargate sizing. 256/512 is the cheapest dev-friendly default.
+ecs_cpu    = 256
+ecs_memory = 512
+
+# RDS sizing.
+db_instance_class = "db.t4g.micro"

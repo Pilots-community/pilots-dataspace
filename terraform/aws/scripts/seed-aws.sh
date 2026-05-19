@@ -1,205 +1,181 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-# Seed identity data for the AWS EDC deployment.
-# Usage: ./seed-aws.sh
-
-DOMAIN="pilots.t-mining.ma-de.be"
-BASE_URL="https://${DOMAIN}"
+# Bootstraps identity data on the deployed connector:
+#   - generates a Membership VC signed by the issuer key
+#   - creates the participant context in IdentityHub
+#   - activates the context and publishes the connector DID
+#   - stores the STS client secret in the controlplane vault
+#   - stores the Membership VC in IdentityHub
+#   - registers the local issuer as trusted
+#
+# Runs from the operator workstation. Hits the ALB on port-specific listeners
+# (operator's IP must be in mgmt_cidrs).
+#
+# Prerequisites:
+#   - terraform apply has succeeded
+#   - db-seeder + did.json seeder have run (./scripts/run-db-seeder.sh and the
+#     seeder_run_command output)
+#   - Repo-root ./generate-keys.sh has been run (issuer key available locally)
+#
+# Idempotent — POST → 409 falls back to PUT for secrets, and trusted-issuer
+# accepts 409 as already-registered.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-SUPERUSER_KEY="c3VwZXItdXNlcg==.superuser-token"
+TF_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${TF_DIR}/../.." && pwd)"
 
-IH_IDENTITY="${BASE_URL}/identity"
-MGMT="${BASE_URL}/mgmt"
+cd "${TF_DIR}"
+DOMAIN=$(terraform output -raw service_urls | sed -n 's/.*dashboard *= *"https:\/\/\([^/]*\).*/\1/p' | head -1)
+if [[ -z "${DOMAIN}" ]]; then
+  # Fallback: read raw value of dashboard URL via JSON.
+  DOMAIN=$(terraform output -json service_urls | python3 -c "import json,sys,urllib.parse as u; print(u.urlparse(json.load(sys.stdin)['dashboard']).hostname)")
+fi
+echo "Domain: ${DOMAIN}"
+
+SUPERUSER_KEY="c3VwZXItdXNlcg==.superuser-token"
 
 DID="did:web:${DOMAIN}%3A7093"
 ISSUER_DID="did:web:${DOMAIN}%3A9876"
+DID_B64=$(printf '%s' "${DID}" | base64)
 
-DID_B64=$(echo -n "${DID}" | base64)
+IH_IDENTITY="https://${DOMAIN}:7092/api/identity"
+MGMT="https://${DOMAIN}:19193/management"
+DSP="https://${DOMAIN}:19194/protocol"
+CREDENTIAL_SVC="https://${DOMAIN}:7091/api/credentials/v1/participants/${DID_B64}"
 
-# Service endpoints use public host
-DSP="${BASE_URL}/dsp/protocol"
-CREDENTIAL_SVC="${BASE_URL}/credentials/v1/participants/${DID_B64}"
-
-echo "=== 1. Checking Connectivity ==="
-if ! curl -sI "${BASE_URL}/dashboard" --max-time 5 > /dev/null; then
-    echo "ERROR: Cannot reach ${BASE_URL}. Ensure DNS is working and ALB is up."
-    exit 1
-fi
-echo "  Connected to ${BASE_URL}"
-
-echo ""
-echo "=== 2. Generating Membership Credential ==="
 ISSUER_KEY="${REPO_ROOT}/deployment/assets/issuer_private.pem"
-if [ ! -f "$ISSUER_KEY" ]; then
-  echo "ERROR: Issuer private key not found at $ISSUER_KEY"
-  echo "Run ./generate-keys.sh from the project root first."
+if [[ ! -f "${ISSUER_KEY}" ]]; then
+  echo "ERROR: ${ISSUER_KEY} not found. Run ./generate-keys.sh from the repo root." >&2
   exit 1
 fi
 
+echo "=== 1. Reachability check ==="
+curl -fsS --max-time 5 "https://${DOMAIN}/" -o /dev/null \
+  || { echo "ERROR: dashboard unreachable. Check mgmt_cidrs and NS delegation." >&2; exit 1; }
+echo "  OK"
+
+echo
+echo "=== 2. Generating Membership VC ==="
 generate_vc() {
-  local SUBJECT_DID="$1"
-  local NAME="$2"
-  local JTI="$3"
-  /usr/bin/python3 -c "
-import json, base64, time
+  local subject_did="$1" name="$2" jti="$3"
+  python3 - "${ISSUER_KEY}" "${subject_did}" "${name}" "${jti}" <<'PY'
+import json, base64, time, sys
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
-import sys
 
 with open(sys.argv[1], 'rb') as f:
     pk = serialization.load_pem_private_key(f.read(), password=None)
 
-def b64e(d): return base64.urlsafe_b64encode(d).rstrip(b'=').decode()
+import os
+issuer_did = os.environ['ISSUER_DID']
+subject = sys.argv[2]
+name = sys.argv[3]
+jti = sys.argv[4]
 
-hdr = {'alg':'ES256','kid':'${ISSUER_DID}#issuer-key-1','typ':'JWT'}
+def b64e(d): return base64.urlsafe_b64encode(d).rstrip(b'=').decode()
+hdr = {'alg':'ES256','kid':f'{issuer_did}#issuer-key-1','typ':'JWT'}
 now = int(time.time())
 payload = {
-    'iss': '${ISSUER_DID}', 'sub': sys.argv[2],
-    'iat': now, 'exp': now + 10*365*24*3600, 'jti': sys.argv[4],
+    'iss': issuer_did, 'sub': subject,
+    'iat': now, 'exp': now + 10*365*24*3600, 'jti': jti,
     'vc': {
         '@context': ['https://www.w3.org/2018/credentials/v1','https://w3id.org/security/suites/jws-2020/v1','https://www.w3.org/ns/credentials/examples/v1'],
-        'id': sys.argv[4],
+        'id': jti,
         'type': ['VerifiableCredential','MembershipCredential'],
-        'issuer': '${ISSUER_DID}',
+        'issuer': issuer_did,
         'issuanceDate': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now)),
         'expirationDate': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now + 10*365*24*3600)),
-        'credentialSubject': {'id': sys.argv[2], 'memberOf': 'dataspace-pilots', 'name': sys.argv[3], 'status': 'Active Member'}
+        'credentialSubject': {'id': subject, 'memberOf': 'dataspace-pilots', 'name': name, 'status': 'Active Member'}
     }
 }
-h = b64e(json.dumps(hdr,separators=(',',':')).encode())
-p = b64e(json.dumps(payload,separators=(',',':')).encode())
+h = b64e(json.dumps(hdr, separators=(',', ':')).encode())
+p = b64e(json.dumps(payload, separators=(',', ':')).encode())
 sig = pk.sign(f'{h}.{p}'.encode(), ec.ECDSA(hashes.SHA256()))
-r,s = decode_dss_signature(sig)
-print(f'{h}.{p}.{b64e(r.to_bytes(32,\"big\")+s.to_bytes(32,\"big\"))}')
-" "$ISSUER_KEY" "$SUBJECT_DID" "$NAME" "$JTI"
+r, s = decode_dss_signature(sig)
+print(f"{h}.{p}.{b64e(r.to_bytes(32,'big')+s.to_bytes(32,'big'))}")
+PY
 }
 
-VC_JWT=$(generate_vc "${DID}" "Connector" "urn:uuid:$(python3 -c 'import uuid; print(uuid.uuid4())')")
-echo "  Generated VC for ${DID}"
+export ISSUER_DID
+VC_JWT=$(generate_vc "${DID}" "Connector" "urn:uuid:$(python3 -c 'import uuid;print(uuid.uuid4())')")
+echo "  VC generated for ${DID}"
 
-echo ""
-echo "=== 3. Seeding IdentityHub ==="
+echo
+echo "=== 3. Creating participant context in IdentityHub ==="
+PARTICIPANT_BODY=$(cat <<JSON
+{
+  "participantContextId": "${DID}",
+  "did": "${DID}",
+  "active": true,
+  "key": {
+    "keyId": "${DID}#key-1",
+    "privateKeyAlias": "${DID}-alias",
+    "keyGeneratorParams": { "algorithm": "EdDSA", "curve": "Ed25519" }
+  },
+  "serviceEndpoints": [
+    { "type": "CredentialService", "serviceEndpoint": "${CREDENTIAL_SVC}", "id": "connector-credentialservice-1" },
+    { "type": "ProtocolEndpoint",  "serviceEndpoint": "${DSP}",            "id": "connector-dsp" }
+  ],
+  "roles": []
+}
+JSON
+)
 
-echo "Creating participant context..."
-RESULT=$(curl -s -w "\n%{http_code}" -X POST "${IH_IDENTITY}/v1alpha/participants" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: ${SUPERUSER_KEY}" \
-  -d "{
-    \"participantContextId\": \"${DID}\",
-    \"did\": \"${DID}\",
-    \"active\": true,
-    \"key\": {
-      \"keyId\": \"${DID}#key-1\",
-      \"privateKeyAlias\": \"${DID}-alias\",
-      \"keyGeneratorParams\": {
-        \"algorithm\": \"EdDSA\",
-        \"curve\": \"Ed25519\"
-      }
-    },
-    \"serviceEndpoints\": [
-      {
-        \"type\": \"CredentialService\",
-        \"serviceEndpoint\": \"${CREDENTIAL_SVC}\",
-        \"id\": \"connector-credentialservice-1\"
-      },
-      {
-        \"type\": \"ProtocolEndpoint\",
-        \"serviceEndpoint\": \"${DSP}\",
-        \"id\": \"connector-dsp\"
-      }
-    ],
-    \"roles\": []
-  }")
-
-HTTP_CODE=$(echo "$RESULT" | tail -1)
-BODY=$(echo "$RESULT" | sed '$d')
-echo "  HTTP ${HTTP_CODE}: ${BODY}"
+RESULT=$(curl -sS -w "\n%{http_code}" -X POST "${IH_IDENTITY}/v1alpha/participants" \
+  -H "Content-Type: application/json" -H "x-api-key: ${SUPERUSER_KEY}" \
+  -d "${PARTICIPANT_BODY}")
+HTTP_CODE=$(echo "${RESULT}" | tail -1)
+BODY=$(echo "${RESULT}" | sed '$d')
+echo "  HTTP ${HTTP_CODE}: ${BODY:-<no body>}"
 
 CLIENT_SECRET=""
-if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "204" ]; then
-  CLIENT_SECRET=$(echo "$BODY" | jq -r '.clientSecret // empty' 2>/dev/null || echo "")
-fi
+case "${HTTP_CODE}" in
+  200|201|204) CLIENT_SECRET=$(echo "${BODY}" | jq -r '.clientSecret // empty' 2>/dev/null || true) ;;
+  409)         echo "  Already exists — STS secret unchanged from prior seed run." ;;
+  *)           echo "  ERROR creating participant context" >&2; exit 1 ;;
+esac
 
-echo ""
-echo "=== 4. Activating Participant Context ==="
-curl -s -w "  HTTP %{http_code}" -X POST "${IH_IDENTITY}/v1alpha/participants/${DID_B64}/state?isActive=true" \
-  -H "x-api-key: ${SUPERUSER_KEY}" && echo "" || echo " FAILED"
+echo
+echo "=== 4. Activating participant context ==="
+curl -sS -X POST "${IH_IDENTITY}/v1alpha/participants/${DID_B64}/state?isActive=true" \
+  -H "x-api-key: ${SUPERUSER_KEY}" -w "  HTTP %{http_code}\n"
 
-echo ""
-echo "=== 5. Publishing DID Document ==="
-curl -s -w "  HTTP %{http_code}" -X POST "${IH_IDENTITY}/v1alpha/participants/${DID_B64}/dids/publish" \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: ${SUPERUSER_KEY}" \
-  -d "{\"did\": \"${DID}\"}" && echo "" || echo " FAILED"
+echo
+echo "=== 5. Publishing DID document ==="
+curl -sS -X POST "${IH_IDENTITY}/v1alpha/participants/${DID_B64}/dids/publish" \
+  -H "Content-Type: application/json" -H "x-api-key: ${SUPERUSER_KEY}" \
+  -d "{\"did\":\"${DID}\"}" -w "  HTTP %{http_code}\n"
 
-echo ""
-echo "=== 6. Storing STS Client Secret ==="
-
-store_or_update_secret() {
-  local MGMT_URL="$1"
-  local SECRET_ID="$2"
-  local SECRET_VALUE="$3"
-
-  local RESPONSE
-  RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${MGMT_URL}/v3/secrets" \
-    -H "Content-Type: application/json" \
-    -H "x-api-key: password" \
-    -d "{
-      \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-      \"@type\": \"Secret\",
-      \"@id\": \"${SECRET_ID}\",
-      \"value\": \"${SECRET_VALUE}\"
-    }")
-  local HTTP_CODE
-  HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-
-  if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
-    echo " created"
-  elif [ "$HTTP_CODE" = "409" ]; then
-    RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT "${MGMT_URL}/v3/secrets" \
-      -H "Content-Type: application/json" \
-      -H "x-api-key: password" \
-      -d "{
-        \"@context\": { \"@vocab\": \"https://w3id.org/edc/v0.0.1/ns/\" },
-        \"@type\": \"Secret\",
-        \"@id\": \"${SECRET_ID}\",
-        \"value\": \"${SECRET_VALUE}\"
-      }")
-    HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
-      echo " updated (was stale)"
-    else
-      echo " FAILED to update (HTTP ${HTTP_CODE})"
-    fi
-  else
-    echo " FAILED (HTTP ${HTTP_CODE})"
-  fi
+if [[ -n "${CLIENT_SECRET}" ]]; then
+  echo
+  echo "=== 6. Storing STS client secret in controlplane vault ==="
+  SECRET_BODY=$(cat <<JSON
+{
+  "@context": { "@vocab": "https://w3id.org/edc/v0.0.1/ns/" },
+  "@type": "Secret",
+  "@id": "${DID}-sts-client-secret",
+  "value": "${CLIENT_SECRET}"
 }
-
-if [ -n "$CLIENT_SECRET" ]; then
-  echo "Storing STS client secret in connector..."
-  store_or_update_secret "${MGMT}" "${DID}-sts-client-secret" "${CLIENT_SECRET}"
-else
-  echo "SKIP: No client secret returned (context likely already exists)"
+JSON
+)
+  STATUS=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "${MGMT}/v3/secrets" \
+    -H "Content-Type: application/json" -H "x-api-key: password" \
+    -d "${SECRET_BODY}")
+  if [[ "${STATUS}" == "409" ]]; then
+    STATUS=$(curl -sS -o /dev/null -w "%{http_code}" -X PUT "${MGMT}/v3/secrets" \
+      -H "Content-Type: application/json" -H "x-api-key: password" \
+      -d "${SECRET_BODY}")
+  fi
+  echo "  HTTP ${STATUS}"
 fi
 
-echo ""
-echo "=== 7. Storing Membership Credential ==="
-
-store_credential() {
-  local IH_IDENTITY="$1"
-  local PARTICIPANT_DID="$2"
-  local PARTICIPANT_DID_B64="$3"
-  local VC_JWT="$4"
-
-  python3 -c "
+echo
+echo "=== 7. Storing Membership VC in IdentityHub ==="
+VC_MANIFEST=$(python3 - "${VC_JWT}" "${DID}" <<'PY'
 import base64, json, sys
-jwt = sys.argv[1]
-participant_did = sys.argv[2]
+jwt = sys.argv[1]; participant_did = sys.argv[2]
 payload = jwt.split('.')[1]
 payload += '=' * (4 - len(payload) % 4)
 decoded = json.loads(base64.urlsafe_b64decode(payload))
@@ -212,59 +188,30 @@ credential = {
     'expirationDate': vc.get('expirationDate'),
     'credentialSubject': [vc.get('credentialSubject')] if isinstance(vc.get('credentialSubject'), dict) else vc.get('credentialSubject', [])
 }
-manifest = {
+print(json.dumps({
     'id': 'membership-credential',
     'participantContextId': participant_did,
-    'verifiableCredentialContainer': {
-        'rawVc': jwt,
-        'format': 'VC1_0_JWT',
-        'credential': credential
-    }
-}
-print(json.dumps(manifest))
-" "$VC_JWT" "$PARTICIPANT_DID" > /tmp/vc-manifest.json
+    'verifiableCredentialContainer': {'rawVc': jwt, 'format': 'VC1_0_JWT', 'credential': credential}
+}))
+PY
+)
+curl -sS -X POST "${IH_IDENTITY}/v1alpha/participants/${DID_B64}/credentials" \
+  -H "Content-Type: application/json" -H "x-api-key: ${SUPERUSER_KEY}" \
+  -d "${VC_MANIFEST}" -w "  HTTP %{http_code}\n"
 
-  curl -s -X POST "${IH_IDENTITY}/v1alpha/participants/${PARTICIPANT_DID_B64}/credentials" \
-    -H "Content-Type: application/json" \
-    -H "x-api-key: ${SUPERUSER_KEY}" \
-    -d @/tmp/vc-manifest.json
-}
+echo
+echo "=== 8. Registering local issuer as trusted ==="
+TI_BODY=$(cat <<JSON
+{"did":"${ISSUER_DID}","name":"Local Issuer","organization":"AWS Deployment","dspEndpoint":"${DSP}","participantDid":"${DID}"}
+JSON
+)
+STATUS=$(curl -sS -o /dev/null -w "%{http_code}" -X POST "${MGMT}/v1/trusted-issuers" \
+  -H "Content-Type: application/json" -H "x-api-key: password" \
+  -d "${TI_BODY}")
+echo "  HTTP ${STATUS} (200/204 = new, 409 = already registered)"
 
-echo -n "Storing MembershipCredential..."
-store_credential "${IH_IDENTITY}" "${DID}" "${DID_B64}" "${VC_JWT}" && echo " OK" || echo " FAILED"
-
-echo ""
-echo "=== 8. Registering Trusted Issuer ==="
-
-register_trusted_issuer() {
-  local ISSUER="$1"
-  local NAME="$2"
-  local ORG="$3"
-  local DSP_EP="${4:-}"
-  local PART_DID="${5:-}"
-
-  local BODY="{\"did\": \"${ISSUER}\", \"name\": \"${NAME}\", \"organization\": \"${ORG}\""
-  if [ -n "$DSP_EP" ]; then BODY="${BODY}, \"dspEndpoint\": \"${DSP_EP}\""; fi
-  if [ -n "$PART_DID" ]; then BODY="${BODY}, \"participantDid\": \"${PART_DID}\""; fi
-  BODY="${BODY}}"
-
-  local HTTP_CODE
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${MGMT}/v1/trusted-issuers" \
-    -H "Content-Type: application/json" \
-    -H "x-api-key: password" \
-    -d "${BODY}")
-
-  if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "409" ]; then
-    echo " OK"
-  else
-    echo " HTTP ${HTTP_CODE}"
-  fi
-}
-
-echo -n "Registering ${ISSUER_DID}..."
-register_trusted_issuer "${ISSUER_DID}" "Local Issuer" "AWS Deployment" "${DSP}" "${DID}"
-
-echo ""
-echo "=== Seeding Complete ==="
-echo "Connector DID: ${DID}"
-echo "Issuer DID:    ${ISSUER_DID}"
+echo
+echo "=== Seeding complete ==="
+echo "  Connector DID: ${DID}"
+echo "  Issuer DID:    ${ISSUER_DID}"
+echo "  Dashboard:     https://${DOMAIN}/"

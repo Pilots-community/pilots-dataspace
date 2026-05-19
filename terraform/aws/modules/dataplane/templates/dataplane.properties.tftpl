@@ -1,0 +1,35 @@
+edc.participant.id=connector
+edc.hostname=${root_domain}
+
+# Base listener
+web.http.port=38181
+web.http.path=/api
+
+# Control API (internal, called by controlplane over CloudMap)
+web.http.control.port=38182
+web.http.control.path=/control
+
+# Public API (peer-facing, ALB :38185)
+web.http.public.port=38185
+web.http.public.path=/public
+
+edc.dpf.selector.url=http://${controlplane_dns}:19192/control/v1/dataplanes
+edc.api.auth.key=password
+
+# EDR token signing keys. Written from secrets to /tmp at startup.
+edc.transfer.proxy.token.signer.privatekey.alias=private-key
+edc.transfer.proxy.token.verifier.publickey.alias=public-key
+edc.transfer.proxy.token.signer.privatekey.path=/tmp/private-key.pem
+edc.transfer.proxy.token.verifier.publickey.path=/tmp/public-key.pem
+
+edc.dataplane.api.public.baseurl=https://${root_domain}:38185/public
+
+# PostgreSQL
+edc.sql.schema.autocreate=true
+edc.datasource.default.url=jdbc:postgresql://${rds_host}:${rds_port}/dataplane
+edc.datasource.default.user=${db_username}
+edc.datasource.default.password=$${DB_PASSWORD}
+
+# Vault
+edc.vault.hashicorp.url=http://${vault_dns}:8200
+edc.vault.hashicorp.token=$${VAULT_TOKEN}

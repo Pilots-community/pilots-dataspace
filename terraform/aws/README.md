@@ -1,173 +1,238 @@
-# AWS - PILOTS INFRASTRUCTURE SETUP
+# Pilots Dataspace — AWS Terraform deployment
 
-## What this stack deploys
+Deploys a single-organization EDC connector on AWS (ECS Fargate + RDS + ALB),
+mirroring `deployment/connector/` locally. Always-on at smallest sizing
+(~$25–40/mo at idle). Scale-to-zero is not used — peer connectors send
+unsolicited DSP / credentials / DID requests and need always-reachable
+endpoints.
 
-- ECS Fargate services for `dashboard`, `identityhub`, `controlplane`, and `dataplane`
-- ECS Fargate support service: `vault` and `did-server`
-- Managed AWS RDS (PostgreSQL) for all databases (Control Plane, Data Plane, IdentityHub)
-- Secure credential management using **AWS Secrets Manager** for database passwords
-- Permanent ECS Fargate tasks (Desired count = 1) for all services to ensure fast response times
-- Application Load Balancer with HTTPS and suffix/path routing:
-  - `https://<root-domain>/dashboard/...`
-  - `https://<root-domain>/credentials/...`
-  - `https://<root-domain>/did-api/...`
-  - `https://<root-domain>/did-server/...`
-  - `https://<root-domain>/dsp/...`
-  - `https://<root-domain>/data/...`
-- Route53 hosted zone + root alias record to ALB
-- ACM certificate for root and wildcard domains
+## Architecture
 
-## Prerequisites
-
-### aws-vault
-
-To access AWS through CLI and Terraform, use `aws-vault`.
-
-Create `~/.aws/config`:
-
-```ini
-[default]
-region = eu-west-3
-output = json
-
-[profile pilots]
-sso_account_id = <YOUR_AWS_ACCOUNT_ID>
-sso_role_name = <YOUR_SSO_ROLE_NAME>
-sso_session = <YOUR_SSO_SESSION_NAME>
-region = eu-west-3
-output = json
-
-[sso-session <YOUR_SSO_SESSION_NAME>]
-sso_start_url = https://<YOUR_ACCESS_PORTAL_ID>.awsapps.com/start
-sso_region = eu-west-3
-sso_registration_scopes = sso:account:access
+```
+                       Route53 hosted zone (root_domain)
+                                 │  apex A-alias
+                                 ▼
+                       ┌───────────────────┐
+                       │  Application Load │  multi-port HTTPS, one wildcard
+                       │     Balancer      │  cert, one listener per service
+                       └────┬──────────────┘
+                            │
+  443  ─ dashboard          │  9876  ─ did-server (issuer did:web doc)
+  7091 ─ identityhub creds  │  19193 ─ controlplane mgmt    [mgmt_cidrs only]
+  7092 ─ identityhub idy *  │  19194 ─ controlplane dsp
+  7093 ─ identityhub did    │  38185 ─ dataplane public
+                            │
+                            ▼
+       ┌──────────────────────────────────────────────────┐
+       │  ECS Fargate cluster — CloudMap "pilots.internal" │
+       │                                                  │
+       │  vault       did-server      identityhub         │
+       │  controlplane                dataplane           │
+       │  dashboard                                       │
+       │                                                  │
+       │  One-shot tasks: db-seeder, seeder               │
+       └──────────────────────────┬───────────────────────┘
+                                  │
+                            RDS Postgres
+                       (controlplane / identityhub
+                              / dataplane)
 ```
 
-Start a session:
+**Operator-only ports** (443, 7092, 19193) are SG-restricted to
+`var.mgmt_cidrs`. Peer-facing ports (7091, 7093, 9876, 19194, 38185) are
+world-open: `did:web:${root_domain}%3A7093` resolves to
+`https://${root_domain}:7093/.well-known/did.json` via the dedicated ALB
+listener, with no path rewriting.
 
-```bash
-unset AWS_VAULT && aws-vault exec pilots --no-session
+## Layout
+
+```
+terraform/aws/
+├── versions.tf  backend.tf  providers.tf  variables.tf  locals.tf
+├── main.tf      outputs.tf
+├── environments/
+│   ├── dev.tfvars.example  (committed)
+│   └── dev.tfvars          (gitignored — your values)
+├── scripts/
+│   ├── upload-keys.sh      operator PEM keys → Secrets Manager
+│   ├── run-db-seeder.sh    one-shot: CREATE DATABASE identityhub/dataplane
+│   ├── seed-aws.sh         identity bootstrap (participant, DID, VC, trusted issuer)
+│   ├── validate.sh         reachability + DSP self-loop test
+│   └── fetch-logs.sh       CloudWatch tail per service
+└── modules/
+    ├── network        default VPC + SGs
+    ├── edge           ACM + Route53 + ALB + listeners + TGs
+    ├── rds            db.t4g.micro + auto-generated password secret
+    ├── ecs-cluster    cluster + CloudMap + split exec/task roles + log group
+    ├── ecs-service    reusable task def + service abstraction
+    ├── vault          dev-mode Vault on Fargate
+    ├── did-server     nginx + EFS shared with seeder
+    ├── identityhub  controlplane  dataplane  dashboard
+    ├── db-seeder      one-shot: psql idempotent CREATE DATABASE
+    └── seeder         one-shot: render did.json into EFS
 ```
 
-### Terraform state management
+Each EDC service module renders its `.properties` file via `templatefile()`
+against a `.tftpl` template, stores the rendered content in Secrets Manager,
+and injects it as the `$EDC_CONFIG` env var. The container entrypoint writes
+the env var to `/app/config/<svc>.properties` then execs the JAR.
 
-Prerequisites:
-- An S3 bucket for Terraform state
-- A DynamoDB table for state locking
+## Prerequisites (one-time)
+
+### 1. AWS access
 
 ```bash
-export MY_COMPANY_NAME=my-company
-export BUCKET_NAME=${MY_COMPANY_NAME}-pilots-infra-terraform
-export DYNAMODB_NAME=${MY_COMPANY_NAME}-pilots-infra-terraform-lock-table
+aws-vault exec pilots --no-session
+```
+
+### 2. S3 state backend
+
+If you haven't already:
+
+```bash
 export REGION=eu-west-3
+export BUCKET=t-mining-pilots-infra-terraform
+export DDB=t-mining-pilots-infra-terraform-lock-table
 
-aws s3 mb s3://$BUCKET_NAME --region $REGION
-aws s3api put-bucket-versioning --bucket $BUCKET_NAME --versioning-configuration Status=Enabled
+aws s3 mb "s3://${BUCKET}" --region "${REGION}"
+aws s3api put-bucket-versioning --bucket "${BUCKET}" --versioning-configuration Status=Enabled
 aws dynamodb create-table \
-    --table-name $DYNAMODB_NAME \
-    --attribute-definitions AttributeName=LockID,AttributeType=S \
-    --key-schema AttributeName=LockID,KeyType=HASH \
-    --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
-    --region $REGION
+  --table-name "${DDB}" \
+  --attribute-definitions AttributeName=LockID,AttributeType=S \
+  --key-schema AttributeName=LockID,KeyType=HASH \
+  --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+  --region "${REGION}"
 ```
 
-### GHCR access for ECS
+Bucket/table names are wired into `backend.tf`; edit there if you use
+different ones.
 
-ECS must authenticate against GitHub Container Registry to pull private images.
+### 3. GHCR pull credentials
 
-Working option: create a **classic PAT** and store it as pull credentials.
-
-1. In GitHub, go to **Settings -> Developer settings -> Personal access tokens -> Tokens (classic) -> Generate new token (classic)**.
-2. Select scopes:
-   - `read:packages` (required for GHCR pull)
-   - `public_repo` (or `repo` if package visibility requires private repo access)
-   - `read:project` (optional, safe to keep if already used by your account workflows)
-3. Set a short expiration and generate the token.
-4. Store token in AWS Secrets Manager as Docker credentials:
+Create a GitHub classic PAT with `read:packages` scope and store it in
+Secrets Manager:
 
 ```bash
 aws secretsmanager create-secret \
   --name pilots-ghcr-credentials \
-  --secret-string '{"username":"<github-username>","password":"<github-token>"}' \
+  --secret-string '{"username":"<github-user>","password":"<PAT>"}' \
   --region eu-west-3
 ```
 
-Copy the returned ARN and set `ghcr_credentials_secret_arn` in your tfvars file.
+Paste the returned ARN into `environments/dev.tfvars` as
+`ghcr_credentials_secret_arn`.
 
-Example:
+### 4. Operator keys
 
-```hcl
-ghcr_credentials_secret_arn = "arn:aws:secretsmanager:eu-west-3:123456789012:secret:pilots-ghcr-credentials-xxxxx"
-```
-
-Fine-grained PATs can still be used, but GitHub UI/permission behavior may vary by org settings. Classic PAT with the scopes above is valid for this deployment.
-
-## Environment config
-
-Use `environments/dev.tfvars.example` as base:
+Generate the PEM keys locally and upload to Secrets Manager:
 
 ```bash
-cp environments/dev.tfvars.example environments/dev.tfvars
+# From repo root
+./generate-keys.sh
+
+# From terraform/aws/
+./scripts/upload-keys.sh dev
+# Copy the three ARNs printed into dev.tfvars
 ```
 
-Then update:
-- `root_domain`
-- `ghcr_credentials_secret_arn`
-- optional sizing (`ecs_cpu`, `ecs_memory`)
-- optional rollout image tag (`image_tag`)
-- RDS credentials (`db_username`, `db_password`)
-
-Dev defaults are intentionally cost-lean (`ecs_cpu=256`, `ecs_memory=512`, `db_instance_class=db.t4g.micro`).
-
-## Applying Terraform config
+## Bootstrap
 
 ```bash
+cd terraform/aws
+cp environments/dev.tfvars.example environments/dev.tfvars   # if needed
+# Edit dev.tfvars — fill in root_domain, mgmt_cidrs (your /32), and the 4 secret ARNs
+
 terraform init
-unset AWS_VAULT && aws-vault exec pilots --no-session
-terraform plan -var-file=environments/dev.tfvars
 terraform apply -var-file=environments/dev.tfvars
 ```
 
-### Certificate validation preflight (important)
+ACM validation blocks until NS delegation is in place. After the first
+apply:
 
-If ACM stays in `PENDING_VALIDATION`, `terraform apply` can hang for a long time. Before applying, ensure your registrar/DNS provider delegates the root domain to the Route53 nameservers from output `route53_nameservers`.
+1. **Delegate NS records** from your registrar to the values in the
+   `route53_nameservers` output. Re-run `terraform apply` once delegation
+   propagates — ACM should validate within a few minutes.
 
-### Database Initialization
+2. **Create the extra Postgres databases:**
+   ```bash
+   ./scripts/run-db-seeder.sh
+   ```
+   Verify in CloudWatch (`/ecs/pilots-dev/db-seeder/...`): "Database
+   seeding completed successfully!"
 
-RDS is initialized with a default `controlplane` database. However, the `identityhub` and `dataplane` databases must be created before the services can fully start.
+3. **Render the issuer DID document into EFS:**
+   ```bash
+   terraform output -raw seeder_run_command | bash
+   ```
+   Verify:
+   ```bash
+   curl https://${ROOT_DOMAIN}:9876/.well-known/did.json
+   ```
+   `$.id` should match `did:web:${ROOT_DOMAIN}%3A9876`.
 
-Since RDS is private, you should use the provided **ECS Seeder Task** to initialize the database from within the VPC.
+4. **Wait for EDC services to settle.** They may restart 1–2 times during
+   first boot while waiting for each other (controlplane needs identityhub,
+   etc.). ECS retries automatically.
 
-1.  **Apply the Terraform config** to create the Task Definition.
-2.  **Run the seeder task** using the command from the terraform output:
-    ```bash
-    # You can fetch the command from terraform output
-    terraform output -raw db_seeder_command | bash
-    ```
-3.  **Verify completion**: Check the CloudWatch logs for the `/ecs/pilots-dev` log group with the prefix `db-seeder`. You should see `Database seeding completed successfully!`.
+5. **Validate:**
+   ```bash
+   ./scripts/validate.sh
+   ```
 
-Once this is done, the main services will be able to connect and start correctly on their next retry.
+6. **Seed identity:**
+   ```bash
+   ./scripts/seed-aws.sh
+   ```
+   Creates the participant context, publishes the connector DID, stores the
+   STS client secret, stores the membership VC, and registers the local
+   issuer as trusted.
 
-## Seeding the environment
+7. **Deep validation (DSP self-loop):**
+   ```bash
+   ./scripts/validate.sh --deep
+   ```
 
-Once the infrastructure is deployed and DNS is resolving, you must seed the IdentityHub and Control Plane with initial data.
+## Day-2
 
-1.  **Ensure DNS is resolving**: Run `./validate.sh` and verify that the domain resolves and HTTPS is working.
-2.  **Run the seed script**:
-    ```bash
-    chmod +x seed-aws.sh
-    ./seed-aws.sh
-    ```
+| What                                      | How                                              |
+| ----------------------------------------- | ------------------------------------------------ |
+| Update connector images                   | Bump `image_tag` in dev.tfvars, `terraform apply`. ECS rolls one task at a time. |
+| Reach the dashboard                       | `https://<root_domain>/` — only from `mgmt_cidrs` IPs. |
+| Read CloudWatch logs                      | `./scripts/fetch-logs.sh 1h services.log`        |
+| Get the DB password                       | `aws secretsmanager get-secret-value --secret-id $(terraform output -raw db_password_secret_arn) --query SecretString --output text` |
+| Get the Vault root token (dev mode)       | `aws secretsmanager get-secret-value --secret-id $(terraform output -raw vault_root_token_secret_arn) --query SecretString --output text` |
+| After a Vault container restart (rare)    | Re-run `./scripts/seed-aws.sh` — vault dev mode loses STS client secrets in-memory. |
+| Add a new mgmt-CIDR (e.g. coworker's IP)  | Append to `mgmt_cidrs` in dev.tfvars, `terraform apply`. |
+| Run ad-hoc psql                           | Run a one-off ECS task with the `postgres:16-alpine` image and the db-password secret, or use a bastion. |
 
-This script will:
-- Create the participant context in **IdentityHub**.
-- Activate the context and publish the **Connector DID**.
-- Store the **STS Client Secret** in the Control Plane vault.
-- Register the **Local Issuer** in the Control Plane so it trusts its own credentials.
+## Caveats / known limitations (first iteration)
 
-## Security Considerations
+- **Vault is dev mode** — in-memory, lost on container restart. Production
+  hardening (raft storage + KMS auto-unseal) is a follow-up.
+- **No autoscaling** — `desired_count = 1` per service. Bump manually if
+  needed; horizontal scaling on DSP/dataplane is safe; controlplane is too
+  but DSP callbacks should pin to one for cleanliness.
+- **No multi-AZ RDS, no snapshots** — `skip_final_snapshot = true`,
+  `backup_retention_period = 0`. Don't run prod against this state file.
+- **Health check matchers are permissive (200–499)** — EDC services
+  authenticate every endpoint except the `/api/check/health` on the base
+  port (which isn't ALB-exposed). The container-level docker healthcheck
+  on the base port governs `RUNNING → HEALTHY`; ALB TG health just
+  confirms the container is up.
+- **Default VPC** — no NAT, public IPs assigned to tasks. A bespoke VPC
+  with private subnets + NAT is a follow-up.
 
-The `/identity` and `/mgmt` APIs are currently exposed on the Application Load Balancer to allow for remote seeding. In a production environment, you should:
-- Restrict these paths to your management IP address in `ssl-routing.tf`.
-- Or use a Bastion host/VPN to reach these APIs internally.
-- Use a strong `db_password` and do not commit it to the repository.
+## Follow-ups (out of scope for this iteration)
+
+- Prod environment (multi-AZ RDS, deletion protection, snapshots).
+- WAFv2 on the ALB (rate-limit + AWS-managed rule sets in front of
+  `/mgmt` and `/identity`).
+- Mirror GHCR images into ECR; remove the PAT dependency.
+- GitHub Actions: `terraform plan` on PR, `apply` on merge via OIDC trust
+  to a deploy role.
+- Vault hardening (raft + KMS auto-unseal + AppRole auth).
+- CloudWatch dashboards + alarms (ALB 5xx, RDS CPU, ECS desired vs running).
+- VPC interface endpoints (Secrets Manager, SSM, ECR, Logs) — avoid NAT
+  egress costs.
+- AWS Backup plan for RDS + EFS.
+- Documented issuer-key rotation runbook.
