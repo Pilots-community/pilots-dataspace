@@ -5,7 +5,6 @@ module "network" {
   source = "./modules/network"
 
   name_prefix = local.name_prefix
-  mgmt_cidrs  = var.mgmt_cidrs
 }
 
 ################################################################################
@@ -24,20 +23,25 @@ module "rds" {
 }
 
 ################################################################################
-# Edge — ACM cert, Route53 zone + apex alias, ALB with one HTTPS listener per
-# (port, service). Path-based rewriting is intentionally avoided so DSP /
-# credentials / DID URLs match what other connectors expect.
+# Edge — ACM cert, Route53 zone + apex alias, single HTTPS listener on 443
+# with path-based routing. All external traffic enters on 443 only.
+# Priority values: lower = evaluated first (specific paths before wildcards).
 ################################################################################
 locals {
   edge_routes = [
-    { name = "dashboard", listener_port = 443, target_port = 80, health_path = "/", health_matcher = "200-399" },
-    { name = "ih-credentials", listener_port = 7091, target_port = 7091, health_path = "/api/credentials/v1/participants/foo", health_matcher = "200-499" },
-    { name = "ih-identity", listener_port = 7092, target_port = 7092, health_path = "/api/identity/v1alpha/participants", health_matcher = "200-499" },
-    { name = "ih-did", listener_port = 7093, target_port = 7093, health_path = "/", health_matcher = "200-499" },
-    { name = "did-server", listener_port = 9876, target_port = 9876, health_path = "/.well-known/did.json", health_matcher = "200,404" },
-    { name = "cp-mgmt", listener_port = 19193, target_port = 19193, health_path = "/management/v3/secrets", health_matcher = "200-499" },
-    { name = "cp-dsp", listener_port = 19194, target_port = 19194, health_path = "/protocol", health_matcher = "200-499" },
-    { name = "dp-public", listener_port = 38185, target_port = 38185, health_path = "/public", health_matcher = "200-499" },
+    # Dashboard: null path_patterns = listener default action (catches everything else)
+    { name = "dashboard", target_port = 80, path_patterns = null, priority = null, health_path = "/", health_matcher = "200-399" },
+    # IdentityHub — three APIs on three backend ports
+    { name = "ih-credentials", target_port = 7091, path_patterns = ["/api/credentials/*"], priority = 10, health_path = "/api/credentials/v1/participants/foo", health_matcher = "200-499" },
+    { name = "ih-identity", target_port = 7092, path_patterns = ["/api/identity/*"], priority = 20, health_path = "/api/identity/v1alpha/participants", health_matcher = "200-499" },
+    { name = "ih-did", target_port = 7093, path_patterns = ["/.well-known/did.json"], priority = 5, health_path = "/.well-known/did.json", health_matcher = "200-499" },
+    # Issuer DID: did:web:<domain>:issuer resolves to https://<domain>/issuer/did.json
+    { name = "did-server", target_port = 9876, path_patterns = ["/issuer/did.json"], priority = 6, health_path = "/issuer/did.json", health_matcher = "200,404" },
+    # Control plane
+    { name = "cp-mgmt", target_port = 19193, path_patterns = ["/management/*"], priority = 30, health_path = "/management/v3/secrets", health_matcher = "200-499" },
+    { name = "cp-dsp", target_port = 19194, path_patterns = ["/protocol/*"], priority = 40, health_path = "/protocol", health_matcher = "200-499" },
+    # Data plane
+    { name = "dp-public", target_port = 38185, path_patterns = ["/public/*"], priority = 50, health_path = "/public", health_matcher = "200-499" },
   ]
 }
 
@@ -235,7 +239,7 @@ module "dataplane" {
 }
 
 ################################################################################
-# Dashboard — operator UI behind apex 443 (mgmt_cidrs-restricted via SG).
+# Dashboard — operator UI served at the apex (/) as the ALB default action.
 ################################################################################
 module "dashboard" {
   source = "./modules/dashboard"

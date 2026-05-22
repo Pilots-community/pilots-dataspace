@@ -1,32 +1,32 @@
 # Identity
-edc.participant.id=did:web:${root_domain}%3A7093
+edc.participant.id=did:web:${root_domain}
 edc.hostname=${root_domain}
 
 # Base listener
 web.http.port=18181
 web.http.path=/api
 
-# Management API (operator-facing, ALB :19193)
+# Management API (operator-facing, ALB /management/*)
 web.http.management.port=19193
 web.http.management.path=/management
 edc.api.auth.key=password
 
-# Dataspace Protocol API (peer-facing, ALB :19194)
+# Dataspace Protocol API (peer-facing, ALB /protocol/*)
 web.http.protocol.port=19194
 web.http.protocol.path=/protocol
-edc.dsp.callback.address=https://${root_domain}:19194/protocol
+edc.dsp.callback.address=https://${root_domain}/protocol
 
 # Control API (internal, consumed by dataplane over CloudMap)
 web.http.control.port=19192
 web.http.control.path=/control
 
 # DCP / Identity
-edc.iam.issuer.id=did:web:${root_domain}%3A7093
+edc.iam.issuer.id=did:web:${root_domain}
 edc.iam.did.web.use.https=true
-edc.iam.sts.privatekey.alias=did:web:${root_domain}%3A7093-alias
-edc.iam.sts.publickey.id=did:web:${root_domain}%3A7093#key-1
-edc.iam.sts.oauth.client.id=did:web:${root_domain}%3A7093
-edc.iam.sts.oauth.client.secret.alias=did:web:${root_domain}%3A7093-sts-client-secret
+edc.iam.sts.privatekey.alias=did:web:${root_domain}-alias
+edc.iam.sts.publickey.id=did:web:${root_domain}#key-1
+edc.iam.sts.oauth.client.id=did:web:${root_domain}
+edc.iam.sts.oauth.client.secret.alias=did:web:${root_domain}-sts-client-secret
 edc.iam.sts.oauth.token.url=http://${identityhub_dns}:7096/api/sts/token
 
 # PostgreSQL

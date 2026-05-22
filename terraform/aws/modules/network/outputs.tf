@@ -22,10 +22,3 @@ output "efs_security_group_id" {
   value = aws_security_group.efs.id
 }
 
-output "peer_ports" {
-  value = var.peer_ports
-}
-
-output "mgmt_ports" {
-  value = var.mgmt_ports
-}

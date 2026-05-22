@@ -7,9 +7,9 @@ locals {
     ManagedBy   = "terraform"
   }
 
-  # DIDs are URL-encoded (port is %3A<port>). Peers resolve these to
-  # https://${root_domain}:<port>/.well-known/did.json — that's why each
-  # peer-facing port gets its own ALB listener on the wildcard cert.
-  participant_did = "did:web:${var.root_domain}%3A7093"
-  issuer_did      = "did:web:${var.root_domain}%3A9876"
+  # All traffic enters on port 443 (path-based routing); no port encoding needed.
+  # did:web:<domain>         → https://<domain>/.well-known/did.json  (identityhub)
+  # did:web:<domain>:issuer  → https://<domain>/issuer/did.json       (nginx did-server)
+  participant_did = "did:web:${var.root_domain}"
+  issuer_did      = "did:web:${var.root_domain}:issuer"
 }

@@ -13,7 +13,7 @@ resource "aws_secretsmanager_secret_version" "nginx_conf" {
         listen 9876;
         server_name _;
 
-        location /.well-known/did.json {
+        location = /issuer/did.json {
             root /usr/share/nginx/html;
             default_type application/json;
             add_header Access-Control-Allow-Origin *;

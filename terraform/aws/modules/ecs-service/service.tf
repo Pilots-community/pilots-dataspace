@@ -1,6 +1,11 @@
 resource "aws_service_discovery_service" "this" {
   name = var.name
 
+  # Deregister any lingering instances before deleting the service. Without
+  # this, destroy/recreate races with ECS's async instance deregistration and
+  # fails with "Service contains registered instances".
+  force_destroy = true
+
   dns_config {
     namespace_id = var.namespace_id
 
@@ -12,9 +17,7 @@ resource "aws_service_discovery_service" "this" {
     routing_policy = "MULTIVALUE"
   }
 
-  health_check_custom_config {
-    failure_threshold = 1
-  }
+  health_check_custom_config {}
 }
 
 resource "aws_ecs_service" "this" {

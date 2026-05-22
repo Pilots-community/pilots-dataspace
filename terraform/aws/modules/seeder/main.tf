@@ -1,5 +1,5 @@
 locals {
-  issuer_did = "did:web:${var.root_domain}%3A9876"
+  issuer_did = "did:web:${var.root_domain}:issuer"
 
   # Python script that reads $ISSUER_KEY_PEM and writes did.json. Passed to
   # the container as a base64-encoded env var to avoid quoting nightmares;

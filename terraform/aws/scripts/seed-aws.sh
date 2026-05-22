@@ -9,8 +9,7 @@ set -euo pipefail
 #   - stores the Membership VC in IdentityHub
 #   - registers the local issuer as trusted
 #
-# Runs from the operator workstation. Hits the ALB on port-specific listeners
-# (operator's IP must be in mgmt_cidrs).
+# Runs from the operator workstation. Hits the ALB on port 443 (path-based routing).
 #
 # Prerequisites:
 #   - terraform apply has succeeded
@@ -35,14 +34,14 @@ echo "Domain: ${DOMAIN}"
 
 SUPERUSER_KEY="c3VwZXItdXNlcg==.superuser-token"
 
-DID="did:web:${DOMAIN}%3A7093"
-ISSUER_DID="did:web:${DOMAIN}%3A9876"
+DID="did:web:${DOMAIN}"
+ISSUER_DID="did:web:${DOMAIN}:issuer"
 DID_B64=$(printf '%s' "${DID}" | base64)
 
-IH_IDENTITY="https://${DOMAIN}:7092/api/identity"
-MGMT="https://${DOMAIN}:19193/management"
-DSP="https://${DOMAIN}:19194/protocol"
-CREDENTIAL_SVC="https://${DOMAIN}:7091/api/credentials/v1/participants/${DID_B64}"
+IH_IDENTITY="https://${DOMAIN}/api/identity"
+MGMT="https://${DOMAIN}/management"
+DSP="https://${DOMAIN}/protocol"
+CREDENTIAL_SVC="https://${DOMAIN}/api/credentials/v1/participants/${DID_B64}"
 
 ISSUER_KEY="${REPO_ROOT}/deployment/assets/issuer_private.pem"
 if [[ ! -f "${ISSUER_KEY}" ]]; then

@@ -43,22 +43,22 @@ else
 fi
 
 echo
-echo "=== Reachability ==="
+echo "=== Reachability (all on port 443) ==="
 check "dashboard"        "https://${DOMAIN}/"                                 "200,301,302"
-check "did-server"       "https://${DOMAIN}:9876/.well-known/did.json"        "200,404"
-check "ih credentials"   "https://${DOMAIN}:7091/api/credentials"             "200,401,404"
-check "ih did"           "https://${DOMAIN}:7093/"                            "200,404"
-check "cp dsp"           "https://${DOMAIN}:19194/protocol"                   "200,404,405"
-check "dp public"        "https://${DOMAIN}:38185/public"                     "200,401,404"
+check "issuer did.json"  "https://${DOMAIN}/issuer/did.json"                  "200,404"
+check "participant did"  "https://${DOMAIN}/.well-known/did.json"             "200,404"
+check "ih credentials"   "https://${DOMAIN}/api/credentials"                  "200,401,404"
+check "cp dsp"           "https://${DOMAIN}/protocol"                         "200,404,405"
+check "dp public"        "https://${DOMAIN}/public"                           "200,401,404"
 
 echo
-echo "=== Operator-only ports (will FAIL if your IP isn't in mgmt_cidrs) ==="
-check "ih identity"      "https://${DOMAIN}:7092/api/identity/v1alpha/participants" "200,401"
-check "cp mgmt"          "https://${DOMAIN}:19193/management/v3/secrets"            "200,401"
+echo "=== Mgmt paths (may require IP allowlist once WAF is configured) ==="
+check "ih identity"      "https://${DOMAIN}/api/identity/v1alpha/participants" "200,401"
+check "cp mgmt"          "https://${DOMAIN}/management/v3/secrets"             "200,401"
 
 echo
 echo "=== did.json content ==="
-ACTUAL_DID=$(curl -ksS --max-time 5 "https://${DOMAIN}:9876/.well-known/did.json" | jq -r '.id // empty' 2>/dev/null || true)
+ACTUAL_DID=$(curl -ksS --max-time 5 "https://${DOMAIN}/issuer/did.json" | jq -r '.id // empty' 2>/dev/null || true)
 if [[ "${ACTUAL_DID}" == "${ISSUER_DID}" ]]; then
   echo "  OK     issuer did.json id = ${ACTUAL_DID}"
 else
@@ -68,11 +68,11 @@ fi
 if [[ "${DEEP}" == "1" ]]; then
   echo
   echo "=== DSP self-loop catalog request ==="
-  RESP=$(curl -ksS -X POST "https://${DOMAIN}:19193/management/v3/catalog/request" \
+  RESP=$(curl -ksS -X POST "https://${DOMAIN}/management/v3/catalog/request" \
     -H 'Content-Type: application/json' -H 'x-api-key: password' \
     -d "{\"@context\":{\"@vocab\":\"https://w3id.org/edc/v0.0.1/ns/\"},
          \"@type\":\"CatalogRequest\",
-         \"counterPartyAddress\":\"https://${DOMAIN}:19194/protocol\",
+         \"counterPartyAddress\":\"https://${DOMAIN}/protocol\",
          \"counterPartyId\":\"${PARTICIPANT_DID}\",
          \"protocol\":\"dataspace-protocol-http\"}" \
     --max-time 30 || echo "{}")

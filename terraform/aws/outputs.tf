@@ -21,16 +21,16 @@ output "dashboard_url" {
 }
 
 output "service_urls" {
-  description = "Endpoints that peers and operators hit. Operator-only (mgmt/identity) ports are SG-restricted to var.mgmt_cidrs."
+  description = "All endpoints exposed on port 443 via path-based ALB routing."
   value = {
     dashboard       = "https://${var.root_domain}/"
-    credentials_api = "https://${var.root_domain}:7091/api/credentials"
-    identity_api    = "https://${var.root_domain}:7092/api/identity"
-    did_api         = "https://${var.root_domain}:7093/"
-    issuer_did_doc  = "https://${var.root_domain}:9876/.well-known/did.json"
-    mgmt_api        = "https://${var.root_domain}:19193/management"
-    dsp_protocol    = "https://${var.root_domain}:19194/protocol"
-    data_public     = "https://${var.root_domain}:38185/public"
+    credentials_api = "https://${var.root_domain}/api/credentials"
+    identity_api    = "https://${var.root_domain}/api/identity"
+    did_api         = "https://${var.root_domain}/.well-known/did.json"
+    issuer_did_doc  = "https://${var.root_domain}/issuer/did.json"
+    mgmt_api        = "https://${var.root_domain}/management"
+    dsp_protocol    = "https://${var.root_domain}/protocol"
+    data_public     = "https://${var.root_domain}/public"
   }
 }
 

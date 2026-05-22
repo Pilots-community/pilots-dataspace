@@ -1,6 +1,6 @@
-# Shared filesystem holding /.well-known/did.json. Two consumers:
-#   - did-server (this module): mounts RO, serves the file
-#   - seeder (modules/seeder): mounts RW, writes the file from the issuer key
+# Shared filesystem holding did.json. Two consumers:
+#   - did-server (this module): mounts RO at /issuer, serves /issuer/did.json
+#   - seeder (modules/seeder): mounts RW at /well-known, writes did.json
 
 resource "aws_efs_file_system" "this" {
   creation_token = "${var.name_prefix}-did-server"

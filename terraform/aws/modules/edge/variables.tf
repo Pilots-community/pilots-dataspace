@@ -28,11 +28,12 @@ variable "alb_security_group_id" {
 # that target group. Inter-listener routing is by port only — no path-based
 # rules — so DSP / credentials / DID URLs match what other connectors expect.
 variable "routes" {
-  description = "List of (listener_port -> target_port) routes plus health-check details."
+  description = "One entry per backend service. Routes with path_patterns become ALB listener rules; the one with null path_patterns is the listener default action."
   type = list(object({
     name           = string
-    listener_port  = number
     target_port    = number
+    path_patterns  = optional(list(string))
+    priority       = optional(number)
     health_path    = string
     health_matcher = string
   }))

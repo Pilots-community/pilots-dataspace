@@ -30,7 +30,7 @@ module "service" {
       source_volume   = "did-content"
       file_system_id  = aws_efs_file_system.this.id
       access_point_id = aws_efs_access_point.this.id
-      container_path  = "/usr/share/nginx/html/.well-known"
+      container_path  = "/usr/share/nginx/html/issuer"
       read_only       = true
     },
   ]
@@ -44,7 +44,7 @@ module "service" {
   # Health check returns 404 before the seeder runs, 200 after. Match either
   # so ECS doesn't mark the task unhealthy during the bootstrap window.
   healthcheck = {
-    command      = ["CMD-SHELL", "wget --spider -q http://127.0.0.1:9876/.well-known/did.json 2>/dev/null || nc -z 127.0.0.1 9876"]
+    command      = ["CMD-SHELL", "wget --spider -q http://127.0.0.1:9876/issuer/did.json 2>/dev/null || nc -z 127.0.0.1 9876"]
     interval     = 30
     timeout      = 5
     retries      = 5

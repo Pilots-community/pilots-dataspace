@@ -11,8 +11,7 @@ resource "aws_security_group" "alb" {
   }
 }
 
-# Public HTTP redirect (80 -> 443). Always world-open; redirect target is
-# behind the same SG and may be blocked, but that's fine.
+# HTTP (80) — public, used only for the 80→443 redirect listener.
 resource "aws_vpc_security_group_ingress_rule" "alb_http_public" {
   security_group_id = aws_security_group.alb.id
   cidr_ipv4         = "0.0.0.0/0"
@@ -22,43 +21,16 @@ resource "aws_vpc_security_group_ingress_rule" "alb_http_public" {
   description       = "HTTP redirect to HTTPS"
 }
 
-# 443 (dashboard) is operator-only. Same with each mgmt port. Closed by
-# default; operator must populate mgmt_cidrs.
-resource "aws_vpc_security_group_ingress_rule" "alb_mgmt_443" {
-  for_each = toset(var.mgmt_cidrs)
-
-  security_group_id = aws_security_group.alb.id
-  cidr_ipv4         = each.value
-  ip_protocol       = "tcp"
-  from_port         = 443
-  to_port           = 443
-  description       = "Dashboard / apex HTTPS (operator-only)"
-}
-
-resource "aws_vpc_security_group_ingress_rule" "alb_mgmt_high" {
-  for_each = {
-    for pair in setproduct(var.mgmt_ports, var.mgmt_cidrs) :
-    "${pair[0]}-${pair[1]}" => { port = pair[0], cidr = pair[1] }
-  }
-
-  security_group_id = aws_security_group.alb.id
-  cidr_ipv4         = each.value.cidr
-  ip_protocol       = "tcp"
-  from_port         = each.value.port
-  to_port           = each.value.port
-  description       = "Mgmt port ${each.value.port} from operator CIDR"
-}
-
-# Peer-facing ports are world-open: DSP, credentials, did, data fetch.
-resource "aws_vpc_security_group_ingress_rule" "alb_peer" {
-  for_each = toset([for p in var.peer_ports : tostring(p)])
-
+# HTTPS (443) — public. All traffic (peer + operator) enters here; path-based
+# routing on the ALB forwards to the right backend. Mgmt path restriction
+# is a follow-up (WAF/listener-rule source-IP condition).
+resource "aws_vpc_security_group_ingress_rule" "alb_https_public" {
   security_group_id = aws_security_group.alb.id
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "tcp"
-  from_port         = tonumber(each.value)
-  to_port           = tonumber(each.value)
-  description       = "Peer port ${each.value} (public)"
+  from_port         = 443
+  to_port           = 443
+  description       = "HTTPS (all paths, single entry point)"
 }
 
 resource "aws_security_group" "ecs_tasks" {
@@ -74,9 +46,8 @@ resource "aws_security_group" "ecs_tasks" {
   }
 }
 
-# Inter-service traffic over CloudMap DNS. All container ports are reached
-# only by other tasks in the same SG, so a single self-ingress on all TCP is
-# safe and avoids enumerating every port.
+# Inter-service traffic over CloudMap DNS. Self-ingress on all TCP covers
+# every container port without enumerating each one.
 resource "aws_vpc_security_group_ingress_rule" "ecs_self" {
   security_group_id            = aws_security_group.ecs_tasks.id
   referenced_security_group_id = aws_security_group.ecs_tasks.id
@@ -86,9 +57,10 @@ resource "aws_vpc_security_group_ingress_rule" "ecs_self" {
   description                  = "Inter-service traffic (CloudMap)"
 }
 
-# ALB -> ECS on each exposed app port (peer ports + mgmt ports + 80 for dashboard).
+# ALB -> ECS on each backend container port (the ALB still connects on the
+# service's own port even though the external listener is 443 only).
 locals {
-  alb_to_ecs_ports = concat([80], var.peer_ports, var.mgmt_ports)
+  alb_to_ecs_ports = [80, 7091, 7092, 7093, 9876, 19193, 19194, 38185]
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ecs_from_alb" {
@@ -99,7 +71,7 @@ resource "aws_vpc_security_group_ingress_rule" "ecs_from_alb" {
   ip_protocol                  = "tcp"
   from_port                    = tonumber(each.value)
   to_port                      = tonumber(each.value)
-  description                  = "ALB -> ECS port ${each.value}"
+  description                  = "ALB to ECS port ${each.value}"
 }
 
 resource "aws_security_group" "rds" {

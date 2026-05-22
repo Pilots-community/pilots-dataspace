@@ -2,15 +2,15 @@
 web.http.port=7090
 web.http.path=/api
 
-# Credentials API (peer-facing, ALB :7091)
+# Credentials API (peer-facing, ALB /api/credentials/*)
 web.http.credentials.port=7091
 web.http.credentials.path=/api/credentials
 
-# Identity API (operator-facing, ALB :7092)
+# Identity API (operator-facing, ALB /api/identity/*)
 web.http.identity.port=7092
 web.http.identity.path=/api/identity
 
-# DID API (peer-facing, ALB :7093)
+# DID API (peer-facing, ALB /.well-known/did.json)
 web.http.did.port=7093
 web.http.did.path=/
 
@@ -22,13 +22,13 @@ web.http.version.path=/api/version
 web.http.sts.port=7096
 web.http.sts.path=/api/sts
 
-# DID Web — HTTPS on; participant DID is did:web:<root>%3A7093 which resolves
-# to https://<root>:7093/.well-known/did.json via the dedicated ALB listener.
+# DID Web — participant DID is did:web:<root_domain> which resolves
+# to https://<root_domain>/.well-known/did.json via the 443 ALB listener.
 edc.iam.did.web.use.https=true
 edc.hostname=${root_domain}
 
-edc.iam.sts.privatekey.alias=did:web:${root_domain}%3A7093-alias
-edc.iam.sts.publickey.id=did:web:${root_domain}%3A7093#key-1
+edc.iam.sts.privatekey.alias=did:web:${root_domain}-alias
+edc.iam.sts.publickey.id=did:web:${root_domain}#key-1
 
 # Super-user key for the participant-management API. Used by seed-aws.sh.
 edc.ih.api.superuser.key=c3VwZXItdXNlcg==.superuser-token
