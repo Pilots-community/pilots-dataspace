@@ -24,6 +24,10 @@ resource "aws_route53_record" "cert_validation" {
   ttl             = 60
   type            = each.value.type
   zone_id         = aws_route53_zone.this.zone_id
+
+  # Ensure the CAA record is live before ACM can verify these CNAMEs and
+  # attempt issuance — otherwise issuance races ahead and fails CAA_ERROR.
+  depends_on = [aws_route53_record.caa]
 }
 
 resource "aws_acm_certificate_validation" "wildcard" {

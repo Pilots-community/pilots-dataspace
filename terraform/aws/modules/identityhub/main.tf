@@ -10,7 +10,7 @@ locals {
 
 resource "aws_secretsmanager_secret" "config" {
   name                    = "${var.name_prefix}-identityhub-config"
-  recovery_window_in_days = 7
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "config" {

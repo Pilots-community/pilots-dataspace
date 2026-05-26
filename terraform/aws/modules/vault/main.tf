@@ -11,7 +11,7 @@ resource "random_password" "root_token" {
 resource "aws_secretsmanager_secret" "root_token" {
   name                    = "${var.name_prefix}-vault-root-token"
   description             = "Dev-mode Vault root token. Rotated by destroying this secret + restarting the vault task."
-  recovery_window_in_days = 7
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "root_token" {

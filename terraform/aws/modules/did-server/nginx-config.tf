@@ -3,7 +3,7 @@
 # pattern as the EDC service configs — keeps the image stock.
 resource "aws_secretsmanager_secret" "nginx_conf" {
   name                    = "${var.name_prefix}-did-server-nginx-conf"
-  recovery_window_in_days = 7
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "nginx_conf" {

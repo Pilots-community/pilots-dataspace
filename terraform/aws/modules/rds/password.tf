@@ -8,7 +8,7 @@ resource "random_password" "db" {
 resource "aws_secretsmanager_secret" "db_password" {
   name                    = "${var.name_prefix}-db-password"
   description             = "RDS master password for ${var.name_prefix}."
-  recovery_window_in_days = 7
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "db_password" {
@@ -21,7 +21,7 @@ resource "aws_secretsmanager_secret_version" "db_password" {
 resource "aws_secretsmanager_secret" "rds_credentials" {
   name                    = "${var.name_prefix}-rds-credentials"
   description             = "Structured RDS credentials for tooling."
-  recovery_window_in_days = 7
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "rds_credentials" {
