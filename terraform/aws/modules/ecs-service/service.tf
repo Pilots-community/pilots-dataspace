@@ -17,7 +17,10 @@ resource "aws_service_discovery_service" "this" {
     routing_policy = "MULTIVALUE"
   }
 
-  health_check_custom_config {}
+  # No health_check_custom_config: ECS registers/deregisters instances by task
+  # lifecycle, so custom health checks aren't needed. An empty block also can't
+  # round-trip on AWS provider 6.x (its only field, failure_threshold, is
+  # deprecated and read back as absent) — declaring it forces perpetual replace.
 }
 
 resource "aws_ecs_service" "this" {
