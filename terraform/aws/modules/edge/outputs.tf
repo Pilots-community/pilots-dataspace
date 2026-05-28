@@ -22,3 +22,13 @@ output "target_group_arns" {
   description = "Map of route name -> target group ARN. Consumed by ECS services to attach as load-balancer targets."
   value       = { for k, tg in aws_lb_target_group.this : k => tg.arn }
 }
+
+output "alb_arn_suffix" {
+  description = "ALB ARN suffix (app/<name>/<id>), used as the CloudWatch LoadBalancer dimension."
+  value       = aws_lb.this.arn_suffix
+}
+
+output "target_group_arn_suffixes" {
+  description = "Map of route name -> TG ARN suffix, used as the CloudWatch TargetGroup dimension."
+  value       = { for k, tg in aws_lb_target_group.this : k => tg.arn_suffix }
+}

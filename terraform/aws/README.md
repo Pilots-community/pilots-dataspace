@@ -107,20 +107,39 @@ aws dynamodb create-table \
 Bucket/table names are wired into `backend.tf`; edit there if you use
 different ones.
 
-### 3. GHCR pull credentials
+### 3. Container images — ECR
 
-Create a GitHub classic PAT with `read:packages` scope and store it in
-Secrets Manager:
+Connector images are built locally and pushed to ECR in this account.
+ECR repos are managed outside Terraform (the script below creates them) so
+image iteration is decoupled from infra apply. Pulls from same-account ECR
+are authorised automatically via the ECS execution role — no pull-creds
+secret needed.
 
 ```bash
-aws secretsmanager create-secret \
-  --name pilots-ghcr-credentials \
-  --secret-string '{"username":"<github-user>","password":"<PAT>"}' \
-  --region eu-west-3
+# One-time: create the 4 ECR repos (pilots/identityhub, pilots/controlplane,
+# pilots/dataplane, pilots/dashboard) with a 10-image + 7-day-untagged
+# lifecycle policy and scan-on-push.
+./scripts/ecr-bootstrap.sh
+# Prints the registry URL; paste into environments/dev.tfvars as image_registry.
+# (Or leave image_registry = "" — it auto-derives the same value.)
+
+# Every time you change connector code: build locally for linux/amd64 and push.
+# Default tag is the short git SHA so each apply gets a unique task-def revision.
+./scripts/build-and-push.sh         # uses git SHA as tag
+./scripts/build-and-push.sh latest  # explicit tag
+
+# Then bump image_tag in environments/dev.tfvars and:
+terraform apply -var-file=environments/dev.tfvars
 ```
 
-Paste the returned ARN into `environments/dev.tfvars` as
-`ghcr_credentials_secret_arn`.
+Notes:
+- Build platform is `linux/amd64` (matches the default Fargate runtime).
+  Override with `BUILD_PLATFORM=linux/arm64 ./scripts/build-and-push.sh`
+  if you also set `runtime_platform` on the task definitions to match.
+- If you ever need to point back at GHCR or another private registry,
+  set `image_registry = "ghcr.io/<org>/<path>"` and provide
+  `ghcr_credentials_secret_arn` (a Secrets Manager secret holding
+  `{"username":"…","password":"<PAT>"}`).
 
 ### 4. Operator keys
 
@@ -196,9 +215,12 @@ apply:
 
 | What                                      | How                                              |
 | ----------------------------------------- | ------------------------------------------------ |
-| Update connector images                   | Bump `image_tag` in dev.tfvars, `terraform apply`. ECS rolls one task at a time. |
-| Reach the dashboard                       | `https://<root_domain>/` — only from `mgmt_cidrs` IPs. |
+| Build + push new images                   | `./scripts/build-and-push.sh` (builds linux/amd64, tags with git SHA, pushes to ECR). |
+| Roll connector images                     | Bump `image_tag` in dev.tfvars, `terraform apply`. ECS replaces tasks one at a time. |
+| Reach the dashboard                       | `https://<root_domain>/` — open to all IPs (mgmt-restriction is a follow-up). |
+| **Check "is it up?"**                     | `terraform output -raw cloudwatch_dashboard_url` — opens the CloudWatch dashboard. |
 | Read CloudWatch logs                      | `./scripts/fetch-logs.sh 1h services.log`        |
+| **Diagnose a broken deployment**          | `./scripts/gather-diagnostics.sh` — dumps task state, stop reasons, target health, logs, secrets state into a tarball. |
 | Get the DB password                       | `aws secretsmanager get-secret-value --secret-id $(terraform output -raw db_password_secret_arn) --query SecretString --output text` |
 | Get the Vault root token (dev mode)       | `aws secretsmanager get-secret-value --secret-id $(terraform output -raw vault_root_token_secret_arn) --query SecretString --output text` |
 | After a Vault container restart (rare)    | Re-run `./scripts/seed-aws.sh` — vault dev mode loses STS client secrets in-memory. |

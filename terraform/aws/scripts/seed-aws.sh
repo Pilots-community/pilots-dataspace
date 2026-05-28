@@ -25,10 +25,12 @@ TF_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${TF_DIR}/../.." && pwd)"
 
 cd "${TF_DIR}"
-DOMAIN=$(terraform output -raw service_urls | sed -n 's/.*dashboard *= *"https:\/\/\([^/]*\).*/\1/p' | head -1)
+# dashboard_url is a plain string output (https://<domain>/); strip scheme+path.
+DOMAIN=$(terraform output -raw dashboard_url | sed -E 's#https?://##; s#/.*##')
 if [[ -z "${DOMAIN}" ]]; then
-  # Fallback: read raw value of dashboard URL via JSON.
-  DOMAIN=$(terraform output -json service_urls | python3 -c "import json,sys,urllib.parse as u; print(u.urlparse(json.load(sys.stdin)['dashboard']).hostname)")
+  echo "ERROR: could not read domain from 'terraform output dashboard_url'." >&2
+  echo "Has terraform apply completed?" >&2
+  exit 1
 fi
 echo "Domain: ${DOMAIN}"
 

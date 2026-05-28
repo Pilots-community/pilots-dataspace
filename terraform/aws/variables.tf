@@ -22,14 +22,21 @@ variable "mgmt_cidrs" {
 }
 
 variable "image_tag" {
-  description = "Container image tag for the EDC services pulled from GHCR."
+  description = "Container image tag for the EDC services. Set by scripts/build-and-push.sh output (short SHA) or 'latest' for dev iteration."
   type        = string
   default     = "latest"
 }
 
-variable "ghcr_credentials_secret_arn" {
-  description = "Secrets Manager ARN for GHCR pull credentials ({\"username\":..., \"password\":...}). Create with scripts/upload-issuer-key.sh-style flow or per README prerequisites."
+variable "image_registry" {
+  description = "Container image registry base URL (without trailing slash). Empty = derive '<account>.dkr.ecr.<region>.amazonaws.com/pilots' from the active account+region. Override to use a different registry (e.g. a private GHCR org)."
   type        = string
+  default     = ""
+}
+
+variable "ghcr_credentials_secret_arn" {
+  description = "OPTIONAL. Secrets Manager ARN for GHCR pull credentials ({\"username\":..., \"password\":...}). Only needed if image_registry points at a private GHCR org. ECR pulls do NOT need this — they use the execution role."
+  type        = string
+  default     = ""
 }
 
 variable "issuer_private_key_secret_arn" {

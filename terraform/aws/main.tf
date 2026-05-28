@@ -85,7 +85,9 @@ locals {
     security_group_ids = [module.network.ecs_tasks_security_group_id]
   }
 
-  image_registry = "ghcr.io/pilots-community/pilots-dataspace"
+  # Default: this account's ECR in the configured region under the `pilots` prefix.
+  # Override via var.image_registry to point at GHCR or another account's ECR.
+  image_registry = var.image_registry != "" ? var.image_registry : "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/pilots"
 }
 
 ################################################################################
@@ -287,6 +289,22 @@ module "db_seeder" {
   rds_port               = module.rds.port
   db_username            = module.rds.username
   db_password_secret_arn = module.rds.db_password_secret_arn
+}
+
+################################################################################
+# CloudWatch dashboard — single pane of glass for "is the connector up?".
+# Uses only free AWS-native metrics; first dashboard per account is free.
+################################################################################
+module "monitoring" {
+  source = "./modules/monitoring"
+
+  name_prefix               = local.name_prefix
+  region                    = var.region
+  cluster_name              = module.ecs_cluster.cluster_name
+  service_names             = [for s in ["controlplane", "dataplane", "identityhub", "dashboard", "did-server", "vault"] : "${local.name_prefix}-${s}"]
+  alb_arn_suffix            = module.edge.alb_arn_suffix
+  target_group_arn_suffixes = module.edge.target_group_arn_suffixes
+  rds_instance_identifier   = module.rds.identifier
 }
 
 module "seeder" {

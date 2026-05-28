@@ -50,9 +50,11 @@ module "service" {
   # `unset WEB_HTTP_PORT WEB_HTTP_PATH` mirrors the local docker-compose
   # workaround: ECS may set these from its own conventions, and they'd
   # override the values in our .properties file.
+  # `mkdir -p /app/config`: the upstream EDC image has no /app/config dir;
+  # without this, sh exits 1 on the redirect and ECS marks the task failed.
   command = [
     "sh", "-c",
-    "unset WEB_HTTP_PORT WEB_HTTP_PATH && printf '%s\\n' \"$EDC_CONFIG\" > /app/config/controlplane-connector.properties && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/controlplane-connector.properties -jar edc-controlplane.jar",
+    "unset WEB_HTTP_PORT WEB_HTTP_PATH && mkdir -p /app/config && printf '%s\\n' \"$EDC_CONFIG\" > /app/config/controlplane-connector.properties && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/controlplane-connector.properties -jar edc-controlplane.jar",
   ]
 
   healthcheck = {

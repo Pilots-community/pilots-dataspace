@@ -47,9 +47,11 @@ module "service" {
   ]
 
   # Materialise the .properties file from the env var at startup, then exec the JAR.
+  # The upstream EDC image only has WORKDIR /app with the JAR — no /app/config —
+  # so we must mkdir it before writing, otherwise sh exits 1 on the redirect.
   command = [
     "sh", "-c",
-    "printf '%s\\n' \"$EDC_CONFIG\" > /app/config/identityhub-connector.properties && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/identityhub-connector.properties -jar identityhub.jar",
+    "mkdir -p /app/config && printf '%s\\n' \"$EDC_CONFIG\" > /app/config/identityhub-connector.properties && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/identityhub-connector.properties -jar identityhub.jar",
   ]
 
   healthcheck = {

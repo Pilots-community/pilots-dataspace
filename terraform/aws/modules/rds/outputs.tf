@@ -1,3 +1,8 @@
+output "identifier" {
+  description = "RDS instance identifier (used as the CloudWatch DBInstanceIdentifier dimension)."
+  value       = aws_db_instance.this.identifier
+}
+
 output "address" {
   value = aws_db_instance.this.address
 }

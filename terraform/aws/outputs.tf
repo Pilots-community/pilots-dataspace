@@ -69,3 +69,8 @@ output "ecs_cluster_name" {
 output "log_group_name" {
   value = module.ecs_cluster.log_group_name
 }
+
+output "cloudwatch_dashboard_url" {
+  description = "Direct link to the CloudWatch dashboard. Best single check for 'is everything up'."
+  value       = module.monitoring.dashboard_url
+}

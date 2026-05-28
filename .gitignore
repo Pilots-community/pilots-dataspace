@@ -63,3 +63,5 @@ CLAUDE.md
 bruno/
 
 terraform/aws/environments/*.tfvars
+
+terraform/*/diagnostics
