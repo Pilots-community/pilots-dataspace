@@ -49,12 +49,18 @@ module "service" {
     { name = "EDC_DATAPLANE_PUBLIC_KEY", valueFrom = var.public_key_secret_arn },
   ]
 
-  # `mkdir -p /app/config`: the upstream EDC image has no /app/config dir;
-  # without this, sh exits 1 on the redirect and ECS marks the task failed.
-  # Private/public PEMs go to /tmp (always exists) so don't need an mkdir.
+  # Pipeline steps, in order:
+  #   - unset WEB_HTTP_PORT WEB_HTTP_PATH: ECS may set these from its own
+  #     conventions and they'd override our .properties file.
+  #   - mkdir /app/config: the upstream EDC image has no /app/config dir.
+  #   - sed pre-substitutes $${DB_PASSWORD} / $${VAULT_TOKEN} with the real
+  #     env-var values (EDC's properties loader doesn't resolve env vars from
+  #     a file — without this, the literal placeholders reach Postgres/Vault).
+  #   - Private/public PEMs go to /tmp (always exists), no mkdir needed and
+  #     no placeholders to substitute.
   command = [
     "sh", "-c",
-    "unset WEB_HTTP_PORT WEB_HTTP_PATH && mkdir -p /app/config && printf '%s\\n' \"$EDC_CONFIG\" > /app/config/dataplane-connector.properties && printf '%s\\n' \"$EDC_DATAPLANE_PRIVATE_KEY\" > /tmp/private-key.pem && printf '%s\\n' \"$EDC_DATAPLANE_PUBLIC_KEY\" > /tmp/public-key.pem && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/dataplane-connector.properties -jar edc-dataplane.jar",
+    "unset WEB_HTTP_PORT WEB_HTTP_PATH && mkdir -p /app/config && printf '%s\\n' \"$EDC_CONFIG\" | sed -e 's|$${DB_PASSWORD}|'\"$DB_PASSWORD\"'|g' -e 's|$${VAULT_TOKEN}|'\"$VAULT_TOKEN\"'|g' > /app/config/dataplane-connector.properties && printf '%s\\n' \"$EDC_DATAPLANE_PRIVATE_KEY\" > /tmp/private-key.pem && printf '%s\\n' \"$EDC_DATAPLANE_PUBLIC_KEY\" > /tmp/public-key.pem && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/dataplane-connector.properties -jar edc-dataplane.jar",
   ]
 
   healthcheck = {

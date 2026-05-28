@@ -47,11 +47,17 @@ module "service" {
   ]
 
   # Materialise the .properties file from the env var at startup, then exec the JAR.
-  # The upstream EDC image only has WORKDIR /app with the JAR — no /app/config —
-  # so we must mkdir it before writing, otherwise sh exits 1 on the redirect.
+  # Two non-obvious steps in the pipeline:
+  #   - mkdir /app/config: the upstream EDC image has no /app/config dir, so
+  #     sh exits 1 on the redirect without it.
+  #   - sed pre-substitutes the $${DB_PASSWORD} / $${VAULT_TOKEN} placeholders
+  #     with the real env-var values before EDC reads the file. EDC's properties
+  #     loader resolves ${key} against OTHER keys in the same config — it does
+  #     NOT pull from process env. Without this, the literal strings would be
+  #     sent verbatim to Postgres / Vault and auth fails.
   command = [
     "sh", "-c",
-    "mkdir -p /app/config && printf '%s\\n' \"$EDC_CONFIG\" > /app/config/identityhub-connector.properties && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/identityhub-connector.properties -jar identityhub.jar",
+    "mkdir -p /app/config && printf '%s\\n' \"$EDC_CONFIG\" | sed -e 's|$${DB_PASSWORD}|'\"$DB_PASSWORD\"'|g' -e 's|$${VAULT_TOKEN}|'\"$VAULT_TOKEN\"'|g' > /app/config/identityhub-connector.properties && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/identityhub-connector.properties -jar identityhub.jar",
   ]
 
   healthcheck = {

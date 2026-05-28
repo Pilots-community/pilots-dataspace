@@ -47,14 +47,17 @@ module "service" {
     { name = "VAULT_TOKEN", valueFrom = var.vault_token_secret_arn },
   ]
 
-  # `unset WEB_HTTP_PORT WEB_HTTP_PATH` mirrors the local docker-compose
-  # workaround: ECS may set these from its own conventions, and they'd
-  # override the values in our .properties file.
-  # `mkdir -p /app/config`: the upstream EDC image has no /app/config dir;
-  # without this, sh exits 1 on the redirect and ECS marks the task failed.
+  # Pipeline steps, in order:
+  #   - unset WEB_HTTP_PORT WEB_HTTP_PATH: mirrors the docker-compose workaround;
+  #     ECS may set these from its own conventions and they'd override our file.
+  #   - mkdir /app/config: the upstream EDC image has no /app/config dir.
+  #   - sed pre-substitutes $${DB_PASSWORD} / $${VAULT_TOKEN} placeholders with
+  #     real env-var values. EDC's properties loader does NOT resolve env vars
+  #     from the file, so without this, literal placeholders reach Postgres/Vault
+  #     and auth fails.
   command = [
     "sh", "-c",
-    "unset WEB_HTTP_PORT WEB_HTTP_PATH && mkdir -p /app/config && printf '%s\\n' \"$EDC_CONFIG\" > /app/config/controlplane-connector.properties && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/controlplane-connector.properties -jar edc-controlplane.jar",
+    "unset WEB_HTTP_PORT WEB_HTTP_PATH && mkdir -p /app/config && printf '%s\\n' \"$EDC_CONFIG\" | sed -e 's|$${DB_PASSWORD}|'\"$DB_PASSWORD\"'|g' -e 's|$${VAULT_TOKEN}|'\"$VAULT_TOKEN\"'|g' > /app/config/controlplane-connector.properties && exec java -Djava.security.egd=file:/dev/urandom -Dedc.fs.config=/app/config/controlplane-connector.properties -jar edc-controlplane.jar",
   ]
 
   healthcheck = {
