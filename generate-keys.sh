@@ -22,16 +22,50 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Find a python3 with the cryptography library
-PYTHON=python3
-if ! "$PYTHON" -c "from cryptography.hazmat.primitives import serialization" 2>/dev/null; then
-  if /usr/bin/python3 -c "from cryptography.hazmat.primitives import serialization" 2>/dev/null; then
-    PYTHON=/usr/bin/python3
-  else
-    echo "ERROR: Python 3 'cryptography' library not found."
-    echo "Install with: pip install cryptography"
-    exit 1
+# Find a Python interpreter that has the cryptography library.
+# Search order: activated venv → repo-local venv → system python3/python.
+_find_python() {
+  local candidates=()
+
+  # 1. Activated virtualenv (any platform)
+  if [ -n "${VIRTUAL_ENV:-}" ]; then
+    candidates+=("$VIRTUAL_ENV/bin/python" "$VIRTUAL_ENV/bin/python3" "$VIRTUAL_ENV/Scripts/python.exe")
   fi
+
+  # 2. Repo-local virtualenvs (macOS/Linux then Windows paths)
+  for venv_dir in ".venv" "venv" ".env"; do
+    candidates+=(
+      "${SCRIPT_DIR}/${venv_dir}/bin/python3"
+      "${SCRIPT_DIR}/${venv_dir}/bin/python"
+      "${SCRIPT_DIR}/${venv_dir}/Scripts/python.exe"
+    )
+  done
+
+  # 3. System interpreters
+  candidates+=("python3" "python" "/usr/bin/python3" "/usr/local/bin/python3")
+
+  local py
+  for py in "${candidates[@]}"; do
+    if command -v "$py" >/dev/null 2>&1 || [ -x "$py" ]; then
+      if "$py" -c "from cryptography.hazmat.primitives import serialization" 2>/dev/null; then
+        echo "$py"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+PYTHON=$(_find_python)
+if [ -z "$PYTHON" ]; then
+  echo "ERROR: Python 3 with the 'cryptography' library not found."
+  echo ""
+  echo "Options:"
+  echo "  1. Activate your virtualenv:  source .venv/bin/activate  (macOS/Linux)"
+  echo "                                .venv\\Scripts\\activate     (Windows)"
+  echo "  2. Install globally:          pip install cryptography"
+  echo "  3. Install in a new venv:     python3 -m venv .venv && source .venv/bin/activate && pip install cryptography"
+  exit 1
 fi
 
 echo "=== Generating Data Plane Token Signing Keys ==="

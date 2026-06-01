@@ -1,0 +1,44 @@
+# Base listener
+web.http.port=7090
+web.http.path=/api
+
+# Credentials API (peer-facing, ALB /api/credentials/*)
+web.http.credentials.port=7091
+web.http.credentials.path=/api/credentials
+
+# Identity API (operator-facing, ALB /api/identity/*)
+web.http.identity.port=7092
+web.http.identity.path=/api/identity
+
+# DID API (peer-facing, ALB /.well-known/did.json)
+web.http.did.port=7093
+web.http.did.path=/
+
+# Version API (internal)
+web.http.version.port=7095
+web.http.version.path=/api/version
+
+# STS API (consumed by controlplane over CloudMap)
+web.http.sts.port=7096
+web.http.sts.path=/api/sts
+
+# DID Web — participant DID is did:web:<root_domain> which resolves
+# to https://<root_domain>/.well-known/did.json via the 443 ALB listener.
+edc.iam.did.web.use.https=true
+edc.hostname=${root_domain}
+
+edc.iam.sts.privatekey.alias=did:web:${root_domain}-alias
+edc.iam.sts.publickey.id=did:web:${root_domain}#key-1
+
+# Super-user key for the participant-management API. Used by seed-aws.sh.
+edc.ih.api.superuser.key=c3VwZXItdXNlcg==.superuser-token
+
+# PostgreSQL
+edc.sql.schema.autocreate=true
+edc.datasource.default.url=jdbc:postgresql://${rds_host}:${rds_port}/identityhub
+edc.datasource.default.user=${db_username}
+edc.datasource.default.password=$${DB_PASSWORD}
+
+# Vault
+edc.vault.hashicorp.url=http://${vault_dns}:8200
+edc.vault.hashicorp.token=$${VAULT_TOKEN}

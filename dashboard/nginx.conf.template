@@ -4,33 +4,42 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Use Amazon DNS resolver for runtime resolution
+    resolver 169.254.169.253 valid=10s;
+
     # Control plane management API
     location /api/management/ {
-        proxy_pass http://${CP_HOST}:${CP_MGMT_PORT}/management/;
+        set $upstream_cp ${CP_HOST}:${CP_MGMT_PORT};
+        proxy_pass http://$upstream_cp/management/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
 
     # Health endpoints
     location /api/health/cp {
-        proxy_pass http://${CP_HOST}:${CP_HEALTH_PORT}/api/check/health;
+        set $upstream_cp_health ${CP_HOST}:${CP_HEALTH_PORT};
+        proxy_pass http://$upstream_cp_health/api/check/health;
     }
     location /api/health/dp {
-        proxy_pass http://${DP_HOST}:${DP_HEALTH_PORT}/api/check/health;
+        set $upstream_dp_health ${DP_HOST}:${DP_HEALTH_PORT};
+        proxy_pass http://$upstream_dp_health/api/check/health;
     }
     location /api/health/ih {
-        proxy_pass http://${IH_HOST}:${IH_HEALTH_PORT}/api/check/health;
+        set $upstream_ih_health ${IH_HOST}:${IH_HEALTH_PORT};
+        proxy_pass http://$upstream_ih_health/api/check/health;
     }
 
     # Data plane public API (for EDR data fetch)
     # Browser sends token via X-Edr-Token; nginx converts to Authorization: Bearer
     location = /api/public {
-        proxy_pass http://${DP_HOST}:${DP_PUBLIC_PORT}/public;
+        set $upstream_dp_public ${DP_HOST}:${DP_PUBLIC_PORT};
+        proxy_pass http://$upstream_dp_public/public;
         proxy_set_header Host $host;
         proxy_set_header Authorization "Bearer $http_x_edr_token";
     }
     location /api/public/ {
-        proxy_pass http://${DP_HOST}:${DP_PUBLIC_PORT}/public/;
+        set $upstream_dp_public ${DP_HOST}:${DP_PUBLIC_PORT};
+        proxy_pass http://$upstream_dp_public/public/;
         proxy_set_header Host $host;
         proxy_set_header Authorization "Bearer $http_x_edr_token";
     }
