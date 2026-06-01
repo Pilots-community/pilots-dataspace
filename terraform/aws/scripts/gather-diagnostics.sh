@@ -5,7 +5,7 @@ set -euo pipefail
 #   - ECS service state + deployment events (why is desiredCount != runningCount?)
 #   - Stopped task reasons (image pull failures, exit codes, OOM kills, etc.)
 #   - ALB target group health (which backend ports aren't passing healthchecks?)
-#   - Recent CloudWatch logs per service (last 200h by default)
+#   - Recent CloudWatch logs per service (last 1h by default)
 #   - Secrets Manager state (any pending deletion blocking apply?)
 #   - Terraform state outputs
 #
@@ -19,11 +19,11 @@ set -euo pipefail
 # Usage:
 #   ./scripts/gather-diagnostics.sh [duration]
 #
-# duration: how far back to pull logs (CloudWatch `tail --since`). Default 200h.
+# duration: how far back to pull logs (CloudWatch `tail --since`). Default 1h.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TF_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DURATION="${1:-200h}"
+DURATION="${1:-1h}"
 REGION="${AWS_REGION:-eu-west-3}"
 
 cd "${TF_DIR}"
